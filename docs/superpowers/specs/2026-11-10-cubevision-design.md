@@ -13,7 +13,7 @@ usage au quotidien, le README renvoie vers ChronoCube.
 
 **Réussi si :**
 - le mode direct écrit les mouvements d'un vrai cube filmé à la webcam, à la cadence de la caméra ;
-- le mode vidéo redonne au moins la qualité du site, plus vite que lui, sur les mêmes vidéos ;
+- le mode vidéo redonne au moins la qualité du site à modèle égal, plus vite que lui, sur les mêmes vidéos de synthèse ;
 - les tests prouvent que les algorithmes portés donnent les mêmes résultats que le TypeScript ;
 - le README montre tout cela par des démos et des chiffres mesurés.
 
@@ -111,10 +111,18 @@ Chaque étape tourne dans son thread, reliée à la suivante par un canal borné
 ## 5. Modèles et matériel
 
 **Livraison en deux temps :**
-1. les modèles actuels du site, inchangés : détecteur SSDLite320-MobileNetV3 (320 px) et lecteur MobileNetV4
-   conv medium (224 px), en variantes `full` (GPU) et `lite` (CPU). Ils donnent la référence face au site ;
-2. un lecteur PC plus gros, réentraîné sur les données existantes et publié à côté, avec son gain mesuré. Il ne
-   commence qu'une fois le premier temps livré.
+1. des modèles déjà entraînés, sans aucune image des vidéos réelles du propriétaire : le détecteur du site
+   (SSDLite320-MobileNetV3, 320 px, entraîné sur des rendus) et le lecteur **v7** (MobileNetV4 conv medium, 224 px,
+   `ml2/runs/reader-v7`), entraîné de zéro sur 646 053 rendus. Exportés en fp16 pour les GPU et fp32 pour le CPU :
+   c'est le même réseau. Le site, lui, utilise v7c, affiné sur des images réelles : la comparaison au site se fait
+   donc en faisant tourner le site avec v7 ;
+2. un lecteur PC plus gros, réentraîné sur les seuls rendus et publié à côté, avec son gain mesuré. Il ne commence
+   qu'une fois le premier temps livré.
+
+**Conséquence connue sur de vraies vidéos** (journaux du 25 octobre, 4 vidéos du propriétaire) : v7 lit environ 21 %
+d'images de moins que v7c (789 contre 1 003 sur 1 985), et aucun des deux n'aboutit à un cube résolu sur ces vidéos.
+Sur les 39 vidéos de synthèse, v7 en résout 31 et v7c 33. Le README ne promet donc pas la reconstruction de vraies
+vidéos.
 
 On entraîne une fois, sur la RTX. Le même fichier ONNX tourne partout : seul le moteur d'exécution change.
 
@@ -139,7 +147,7 @@ Objectifs, à vérifier par la mesure ; aucun chiffre n'est annoncé avant :
 - vidéo : plus rapide que le temps réel, et plus rapide que le site sur les mêmes vidéos.
 
 `cubevision bench` mesure capture, détecteur, lecteur, suivi et décodage, par matériel. La référence web est
-mesurée une fois dans Chrome sous Windows, sur les mêmes fichiers.
+mesurée une fois dans Chrome sous Windows, avec le lecteur v7 et les mêmes vidéos de synthèse.
 
 ## 7. Cas d'erreur
 
@@ -150,14 +158,14 @@ mesurée une fois dans Chrome sous Windows, sur les mêmes fichiers.
 | Reconstruction non résolue | mouvements gardés, passages manquants signalés |
 | Le mélange ne colle pas à la vidéo | message explicite, pas de résultat inventé |
 | Modèles absents | indique `cubevision fetch-models` |
-| Pas de GPU utilisable | CPU avec le modèle `lite`, et un avertissement |
+| Pas de GPU utilisable | CPU avec le modèle fp32, et un avertissement |
 | Vidéo illisible, caméra occupée | message d'erreur clair, code de sortie non nul |
 
 ## 8. Tests
 
-- **Parité avec le TypeScript :** un script dans ChronoCube génère des fixtures à partir de vraies lectures
-  (`ml2/runs/dump-v7`, 3 vidéos, 1,8 Mo, lectures seulement, sans images) et de cas aléatoires. Les tests Rust
-  retrouvent les mêmes états, mouvements et scores.
+- **Parité avec le TypeScript :** un script dans ChronoCube génère des fixtures à partir des lectures de vidéos de
+  synthèse (`ml2/evals/synthetic-v3`, mode `DUMP`) et de cas aléatoires. Les tests Rust retrouvent les mêmes états,
+  mouvements et scores.
 - **Unitaires** dans chaque crate.
 - **Décalage du direct :** un mouvement confirmé n'est jamais modifié ensuite.
 - **Bout en bout :** une courte vidéo de synthèse donne les mouvements attendus (`solve_video.py`).
@@ -169,12 +177,14 @@ mesurée une fois dans Chrome sous Windows, sur les mêmes fichiers.
 - README en anglais pour toucher le public open source : GIF, schéma, tableau web contre natif, explication de
   l'entraînement, lien vers ChronoCube.
 - Modèles dans les GitHub Releases, pas dans git.
-- **Entraînement, à décrire honnêtement :** le lecteur actuel (v7c) est entraîné sur des rendus de synthèse **et** sur
-  environ 260 images issues des vraies vidéos du propriétaire, labellisées automatiquement (`data/real-harvest`).
-  Il n'est donc pas « 100 % synthétique ».
-- **Ne sont pas publiés :** les vidéos réelles et `data/real-harvest`, sauf choix explicite du propriétaire ; les
-  images COCO (licences Flickr variées), qu'un script télécharge pour qui veut réentraîner. Sans `real-harvest`, un
-  réentraînement ne reproduit pas exactement les poids publiés, et le README le dit.
+- **Aucune image réelle du propriétaire** dans le dépôt, les modèles, les fixtures, les benchmarks ou les démos :
+  ni ses vidéos, ni `data/real-harvest`. Les configurations `v6c`, `v7b` et `v7c`, qui s'en servent, ne sont pas
+  reprises dans `training/`.
+- **Entraînement, à décrire honnêtement :** le lecteur est entraîné sur des rendus Blender. Ces rendus utilisent
+  en partie des photos COCO comme arrière-plans, et le détecteur part de poids pré-entraînés sur COCO. Les photos
+  COCO (licences Flickr variées) ne sont pas redistribuées : un script les télécharge pour qui veut réentraîner.
+- `data/synth/train`, utilisé pour v7, a été supprimé localement le 2026-10-31 ; le poids reste, et le rendu peut être
+  relancé.
 - Les démos utilisent des vidéos de synthèse.
 - Rien n'est publié sur GitHub sans l'accord explicite du propriétaire au moment de le faire.
 
