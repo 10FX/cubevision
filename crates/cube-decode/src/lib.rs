@@ -4,6 +4,8 @@
 pub mod decode;
 pub mod help;
 pub mod live;
+pub mod mirror;
+pub mod motion;
 pub mod orientation;
 pub mod pipeline;
 pub mod present;
