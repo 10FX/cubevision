@@ -19,22 +19,8 @@ fn fixtures_load() {
     }
 }
 
-use cube_decode::decode::{DecodeOptions, DecodeResult, decode_solve};
+use cube_decode::decode::{DecodeOptions, decode_solve};
 use cube_decode::state::solved_state;
-use serde_json::Value;
-
-/// The decode against what decodeSolve gave: the same moves at the same times, the same states, the same verdict
-fn same_decode(name: &str, got: &DecodeResult, want: &Value) {
-    let moves: Vec<(String, f64)> = got.search.moves.iter().map(|m| (m.token.clone(), m.t)).collect();
-    let expected: Vec<(String, f64)> = want["moves"].as_array().unwrap().iter().map(|m| (m["move"].as_str().unwrap().to_string(), num(&m["t"]))).collect();
-    assert_eq!(moves, expected, "{name}: moves");
-    assert_eq!(got.search.solved, want["solved"].as_bool().unwrap(), "{name}: solved");
-    assert_eq!(got.gaps, want["gaps"].as_array().unwrap().iter().map(num).collect::<Vec<_>>(), "{name}: gaps");
-    assert!(close(got.search.agreement, num(&want["agreement"])), "{name}: agreement {} against {}", got.search.agreement, want["agreement"]);
-    let states: Vec<_> = got.search.path.iter().map(|(s, _)| s.to_vec()).collect();
-    let expected: Vec<_> = want["path"].as_array().unwrap().iter().map(|s| state(s).to_vec()).collect();
-    assert_eq!(states, expected, "{name}: path");
-}
 
 #[test]
 fn random_decodes_match_typescript() {

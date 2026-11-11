@@ -62,7 +62,7 @@ pub struct DecodeResult {
 }
 
 /// JavaScript's Math.round: halves up
-fn js_round(x: f64) -> f64 {
+pub(crate) fn js_round(x: f64) -> f64 {
     let r = x.floor();
     if x - r >= 0.5 { r + 1.0 } else { r }
 }

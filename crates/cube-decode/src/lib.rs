@@ -2,7 +2,9 @@
 //! `src/lib/vision` and `src/lib/smartcube`, the parts that need neither a model nor a camera.
 
 pub mod decode;
+pub mod help;
 pub mod reading;
 pub mod state;
+pub mod truth;
 
 pub use reading::{FaceReading, FrameReadings, Motion, Reading, State, TimedMove};
