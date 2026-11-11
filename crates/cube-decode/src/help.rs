@@ -10,30 +10,12 @@ use cube_core::{js_space, parse_move};
 
 use crate::decode::{DecodeResult, explain, js_round};
 use crate::reading::{Reading, State, TimedMove};
+use crate::reconstruct::collapse;
 use crate::state::{GARBAGE, MOVES, apply_move, score, scorer, solved_state};
 use crate::truth::quarters;
 
 /// Time given to a turn no reading saw, ms
 const UNSEEN_MS: f64 = 150.0;
-
-/// Same-face turns in a row become one: R R = R2, R R' = nothing (ChronoCube's collapse)
-fn collapse(moves: &[String]) -> Vec<String> {
-    let mut out: Vec<(char, u32)> = Vec::new();
-    for m in moves {
-        let face = m.chars().next().unwrap();
-        let turns = if m.ends_with('2') { 2 } else if m.ends_with('\'') { 3 } else { 1 };
-        match out.last_mut() {
-            Some(last) if last.0 == face => {
-                last.1 = (last.1 + turns) % 4;
-                if last.1 == 0 {
-                    out.pop();
-                }
-            }
-            _ => out.push((face, turns)),
-        }
-    }
-    out.into_iter().map(|(face, turns)| format!("{face}{}", if turns == 2 { "2" } else if turns == 3 { "'" } else { "" })).collect()
-}
 
 /// The moves typed (the cuber's notation, rotations, wide moves and slices included, from the hold that scrambled)
 /// as turns of the decoder (MOVES indices); None: a token is not a move
