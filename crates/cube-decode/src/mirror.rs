@@ -76,7 +76,9 @@ impl MirrorCheck {
             if faces.is_empty() {
                 return 0.0;
             }
-            let prepared = scorer(&Reading { from: 0.0, to: 0.0, faces: faces.to_vec(), moved: None }, GARBAGE);
+            // Sanitized first, as the decoder's readings (a NaN: not seen): one NaN would hide the answer for good
+            let faces = faces.iter().cloned().map(FaceReading::sanitized).collect();
+            let prepared = scorer(&Reading { from: 0.0, to: 0.0, faces, moved: None }, GARBAGE);
             score(&self.start, &prepared, None) - prepared.garbage.iter().fold(0.0, |a, b| a + b)
         });
         if gains[0].max(gains[1]) < EVIDENCE {

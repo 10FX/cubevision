@@ -62,6 +62,9 @@ pub fn pass(
         }
         table.reset(count);
         let most = weights[k] * bound(reading, keep);
+        // A reading that ends before the one before it weighs less than nothing: its best reading is no bound then,
+        // and every state is scored as ChronoCube does
+        let exact = weights[k] >= 0.0;
         let margin = 1e-3 + 1e-6 * most.abs();
         let rest = rest_bounds(reading, keep);
         // The beam as a min-heap on the total: its root is the last state kept
@@ -122,12 +125,12 @@ pub fn pass(
                 sequence[c] = s as u32;
                 // A state that cannot enter the beam even read at best is not scored: it would be left out anyway
                 // (the margin covers the float rounding of the reading's logs, so as to leave out no state ChronoCube keeps)
-                if heap.len() >= o.beam && cost + most + margin <= heap[0].0 {
+                if exact && heap.len() >= o.beam && cost + most + margin <= heap[0].0 {
                     continue;
                 }
                 let gathered = &gather[s * 54..s * 54 + 54];
                 // Scored face by face, given up once it cannot enter the beam
-                let need = if heap.len() >= o.beam { heap[0].0 - cost - margin } else { f64::NEG_INFINITY };
+                let need = if exact && heap.len() >= o.beam { heap[0].0 - cost - margin } else { f64::NEG_INFINITY };
                 let Some(likely) = likelihood_above(|i| state[gathered[i] as usize], reading, keep, weights[k], need, &rest) else {
                     continue;
                 };

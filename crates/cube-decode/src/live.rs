@@ -110,7 +110,9 @@ impl LiveTracker {
             self.blind += 1;
             return;
         }
-        let prepared = scorer(&Reading { from: 0.0, to: 0.0, faces: faces.to_vec(), moved: None }, LIVE_MISREAD);
+        // Sanitized first, as the decoder's readings (a NaN: not seen): a NaN score would rank the hypotheses at random
+        let faces = faces.iter().cloned().map(FaceReading::sanitized).collect();
+        let prepared = scorer(&Reading { from: 0.0, to: 0.0, faces, moved: None }, LIVE_MISREAD);
         let move_cost = self.o.move_cost;
         // Hypotheses in the order first offered (a Map's), the best score for each state
         let mut next: Vec<Hypothesis> = Vec::new();

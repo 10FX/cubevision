@@ -277,9 +277,9 @@ Four tests are ignored by default; run one with `cargo test -- --ignored <name>`
 
 ## The decoder, checked against ChronoCube
 
-`cube-core` and `cube-decode` are ChronoCube's TypeScript rewritten line for line, and must give the
-same results: same moves, same times, same scores to the last digit. They need neither ONNX, nor a
-camera, nor a GPU:
+`cube-core` and `cube-decode` are ChronoCube's TypeScript rewritten in Rust, and must give the same
+results on what a model can read: same moves, same times, same scores (compared to 1e-9, on Linux).
+They need neither ONNX, nor a camera, nor a GPU:
 
 ```sh
 cargo test --workspace --release     # about two minutes; debug builds are much slower
@@ -297,15 +297,28 @@ TypeScript made of them, and asks the Rust for the same:
 | `orientations.json` | the cuber's rotations from the cube's orientation, the replay track |
 | `follower.json` | how far into a scramble the cube is, the way back after a wrong turn |
 | `pixels.json` | crop motion, mirrored videos |
-| `shuffled.json` | frames at one time or going back |
+| `shuffled.json`, `backwards.json` | frames at one time or going back, readings that end before the last |
+| `held.json` | a video analysed with the hold that scrambled, the camera's rotation and moves vouched for |
 
 The fixtures are written by a generator in ChronoCube's repository, from seeded random cases and
 from synthetic (Blender) videos only; no real video or photo is in this repository. With ChronoCube
 checked out next to cubevision, they are written again by:
 
 ```sh
-npx vitest run --config vitest.vision.config.mts scripts/vision/fixtures.test.ts
+OUT=../cubevision/crates READINGS=<frames read from the synthetic videos> \
+    npx vitest run --config vitest.vision.config.mts scripts/vision/fixtures.test.ts
 ```
+
+Without `READINGS` the video fixtures are left as they are.
+
+The Rust departs from the TypeScript on purpose in three places, none of which changes a result on
+probabilities a model gives:
+
+- A cell whose probabilities are not ones (a NaN, an infinity, a negative) counts as not seen, where
+  JavaScript carries the NaN along. The live tracker and the mirror check do the same.
+- The decoder leaves out states that cannot enter its beam before scoring them, and runs its two
+  passes side by side: same result, several times faster.
+- Sorts are total: Rust's panic on an order that is not.
 
 ## Repository layout
 

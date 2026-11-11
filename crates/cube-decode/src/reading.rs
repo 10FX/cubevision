@@ -15,9 +15,9 @@ pub struct FaceReading {
 }
 
 impl FaceReading {
-    /// A cell or a rotation with a NaN in it counts as not seen
+    /// A cell or a rotation with a value no probability can have (a NaN, an infinity, below zero) counts as not seen
     pub fn sanitized(self) -> FaceReading {
-        let clean = |xs: &[f32]| !xs.iter().any(|x| x.is_nan());
+        let clean = |xs: &[f32]| xs.iter().all(|x| x.is_finite() && *x >= 0.0);
         FaceReading {
             center: self.center,
             stickers: self.stickers.map(|cell| cell.filter(|p| clean(p))),

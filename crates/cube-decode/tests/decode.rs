@@ -99,3 +99,12 @@ fn readings_back_in_time_do_not_panic() {
     let got = decode_solve(&state(&solves["solves"][0]["start"]), &rs, &DecodeOptions::default());
     assert_eq!(got.search.path.len(), rs.len());
 }
+
+#[test]
+fn readings_ending_before_the_last_decode_as_typescript() {
+    // Such a reading weighs less than nothing: nothing may be left out on the strength of how well it could be read
+    for (k, solve) in fixture("backwards.json")["solves"].as_array().unwrap().iter().enumerate().take(8) {
+        let got = decode_solve(&state(&solve["start"]), &readings(&solve["readings"]), &DecodeOptions::default());
+        same_decode(&format!("solve {k}"), &got, &solve["decode"]);
+    }
+}

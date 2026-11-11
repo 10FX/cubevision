@@ -66,3 +66,65 @@ fn frames_at_one_time_or_going_back_do_not_panic() {
     let got = analyze_readings(&frames, shuffled["scramble"].as_str().unwrap(), &AnalyzeOptions::default()).expect("a result");
     same_result("shuffled", &got, &shuffled["result"]);
 }
+
+#[test]
+fn a_held_helped_video_matches_typescript() {
+    // As the live mode hands a video over: the hold that scrambled, the camera's rotation, moves the cuber vouches for
+    let cases = fixture("held.json");
+    let frames = frames(&cases[0]["frames"]);
+    for case in cases.as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let camera = (!case["camera"].is_null()).then(|| {
+            let xs: Vec<f64> = case["camera"].as_array().unwrap().iter().map(num).collect();
+            xs.try_into().unwrap()
+        });
+        let hold = case["hold"].as_str().unwrap();
+        assert!(!hold.is_empty());
+        let mut o = AnalyzeOptions { hold: Some(hold.to_string()), camera, ..AnalyzeOptions::default() };
+        let scramble = case["scramble"].as_str().unwrap();
+        same_result(&format!("{name} plain"), &analyze_readings(&frames, scramble, &o).expect("a result"), &case["plain"]);
+        o.help = Some(case["help"].as_str().unwrap().to_string());
+        same_result(&format!("{name} helped"), &analyze_readings(&frames, scramble, &o).expect("a result"), &case["helped"]);
+    }
+}
+
+#[test]
+fn probabilities_no_model_should_give_do_not_panic() {
+    use cube_decode::live::{LiveTracker, TrackerOptions};
+    use cube_decode::mirror::MirrorCheck;
+    let video = &video_fixtures()[0].1;
+    let scramble = video["scramble"].as_str().unwrap();
+    let mut frames: Vec<FrameReadings> = frames(&video["frames"]).into_iter().skip(100).take(150).collect();
+    let bad = [f32::NAN, 0.0, f32::INFINITY, -1.0, f32::MIN_POSITIVE / 2.0, f32::NEG_INFINITY];
+    let mut n = 0;
+    for frame in &mut frames {
+        for face in &mut frame.faces {
+            for cell in face.stickers.iter_mut().flatten() {
+                n += 1;
+                if n % 3 == 0 {
+                    cell[n % 6] = bad[n / 3 % 6];
+                }
+                if n % 41 == 0 {
+                    *cell = [f32::NAN; 6];
+                }
+            }
+            face.rotation = Some([f32::NAN, f32::INFINITY, 0.0, -1.0]);
+        }
+    }
+    assert!(n > 500, "{n}");
+    // Through every way in: the whole analysis (helped and not), the live tracker, the mirror check
+    let o = AnalyzeOptions::default();
+    let got = analyze_readings(&frames, scramble, &o).expect("a result");
+    assert_eq!(got.frames, 150);
+    assert!(got.agreement.is_finite());
+    let helped = AnalyzeOptions { help: Some("R U F".into()), ..AnalyzeOptions::default() };
+    assert!(analyze_readings(&frames, scramble, &helped).is_some());
+    let mut tracker = LiveTracker::new(cube_decode::state::solved_state(), TrackerOptions::default());
+    let mut mirror = MirrorCheck::new(scramble, None);
+    for frame in &frames {
+        tracker.update(&frame.faces);
+        mirror.add(&frame.faces, &frame.faces);
+    }
+    assert_eq!(tracker.state().len(), 54);
+    assert!(!mirror.lead().is_nan());
+}
