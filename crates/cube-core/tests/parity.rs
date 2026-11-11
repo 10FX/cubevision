@@ -45,3 +45,32 @@ fn parentheses_only_group() {
     assert_eq!(tokenize("(R U) R'"), ["R", "U", "R'"]);
     assert_eq!(parse_alg("R foo U").invalid, ["foo"]);
 }
+
+fn numbers(v: &Value) -> Vec<u64> {
+    v.as_array().unwrap().iter().map(|x| x.as_u64().unwrap()).collect()
+}
+
+#[test]
+fn cube_matches_typescript() {
+    for case in fixtures()["cubes"].as_array().unwrap() {
+        let alg = case["alg"].as_str().unwrap();
+        let cube = Cube::solved().apply(alg);
+        let stickers: Vec<u64> = cube.stickers().iter().map(|&s| s as u64).collect();
+        assert_eq!(stickers, numbers(&case["stickers"]), "{alg}");
+        let c = numbers(&case["cubie"][3]);
+        let at = &case["cubie"];
+        let (face, row, col) = (at[0].as_u64().unwrap() as usize, at[1].as_u64().unwrap() as usize, at[2].as_u64().unwrap() as usize);
+        assert_eq!(cube.cubie_colors(face, row, col).iter().map(|&x| x as u64).collect::<Vec<_>>(), c, "{alg}");
+    }
+}
+
+#[test]
+fn layers_beyond_the_cube_turn_nothing() {
+    assert_eq!(Cube::solved().apply("4R"), Cube::solved());
+    assert_eq!(Cube::solved().apply("4294967295R 99999999999Rw"), Cube::solved().apply("x"), "every layer: the whole cube");
+}
+
+#[test]
+fn unknown_tokens_are_skipped() {
+    assert_eq!(Cube::solved().apply("R foo U"), Cube::solved().apply("R U"));
+}
