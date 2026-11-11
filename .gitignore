@@ -1,0 +1,8 @@
+target/
+ort/
+.superpowers/
+*.onnx
+*.mp4
+*.webm
+*.mov
+*.MOV
