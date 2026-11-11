@@ -1,0 +1,19 @@
+{
+  "codec": "vp8",
+  "device": "cuda",
+  "file": "synth-23-000.webm",
+  "file_fps": 30.0,
+  "found_share": 0.9923273657289002,
+  "frames": 391,
+  "height": 854,
+  "ms_mean_per_frame": {
+    "crop": 0.3604232890025572,
+    "decode": 1.0115235345268538,
+    "detector": 12.583677818414298,
+    "letterbox": 3.3360657391304303,
+    "reader": 5.125877263427108
+  },
+  "precision": "fp16",
+  "processed_fps": 46.3350431806435,
+  "width": 480
+}

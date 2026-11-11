@@ -34,6 +34,7 @@ pub struct Timings {
     pub reader: Vec<f64>,
     /// one batch of 8 squares per value
     pub reader_batch8: Vec<f64>,
+    pub detector_batch8: Vec<f64>,
 }
 
 impl Timings {
@@ -44,6 +45,7 @@ impl Timings {
         };
         let mut totals: Vec<f64> = self.detector.iter().zip(&self.reader).map(|(d, r)| d + r).collect();
         let mut batch = self.reader_batch8.clone();
+        let mut detector_batch = self.detector_batch8.clone();
         json!({
             "device": device_name(device),
             "precision": precision_name(precision),
@@ -52,6 +54,7 @@ impl Timings {
             "reader_ms": quantiles(&self.reader),
             "total_p95_ms": percentile(&mut totals, 95.0),
             "reader_batch8_ms_per_image": percentile(&mut batch, 50.0) / 8.0,
+            "detector_batch8_ms_per_image": percentile(&mut detector_batch, 50.0) / 8.0,
         })
     }
 }
@@ -71,11 +74,12 @@ pub fn fixed_input(size: usize, batch: usize) -> Vec<f32> {
 
 /// 20 warm-up frames, then detector + reader frame after frame for `seconds`, then 8-square batches
 pub fn run(models: &mut Models, seconds: f64) -> Result<Timings> {
-    let (square, crop, crops) = (fixed_input(320, 1), fixed_input(224, 1), fixed_input(224, 8));
+    let (square, crop, crops, squares) = (fixed_input(320, 1), fixed_input(224, 1), fixed_input(224, 8), fixed_input(320, 8));
     for _ in 0..20 {
         models.detect(&square)?;
         models.read(&crop, 1)?;
         models.read(&crops, 8)?;
+        models.detect_batch(&squares, 8)?;
     }
     let mut timings = Timings::default();
     let end = Instant::now() + Duration::from_secs_f64(seconds);
@@ -91,6 +95,9 @@ pub fn run(models: &mut Models, seconds: f64) -> Result<Timings> {
         let t = Instant::now();
         models.read(&crops, 8)?;
         timings.reader_batch8.push(ms(t));
+        let t = Instant::now();
+        models.detect_batch(&squares, 8)?;
+        timings.detector_batch8.push(ms(t));
     }
     Ok(timings)
 }
@@ -101,7 +108,7 @@ mod tests {
 
     #[test]
     fn summary_adds_both_models_per_frame() {
-        let timings = Timings { detector: vec![1.0, 2.0, 3.0, 4.0], reader: vec![10.0, 10.0, 10.0, 30.0], reader_batch8: vec![16.0, 24.0] };
+        let timings = Timings { detector: vec![1.0, 2.0, 3.0, 4.0], reader: vec![10.0, 10.0, 10.0, 30.0], reader_batch8: vec![16.0, 24.0], detector_batch8: vec![40.0] };
         let s = timings.summary(Device::Cuda, Precision::Fp16);
         assert_eq!(s["device"], "cuda");
         assert_eq!(s["precision"], "fp16");
@@ -109,5 +116,6 @@ mod tests {
         assert_eq!(s["reader_ms"]["p95"], 30.0);
         assert_eq!(s["total_p95_ms"], 34.0);
         assert_eq!(s["reader_batch8_ms_per_image"], 2.0);
+        assert_eq!(s["detector_batch8_ms_per_image"], 5.0);
     }
 }

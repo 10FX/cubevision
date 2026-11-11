@@ -96,7 +96,12 @@ fn session(path: &Path, device: Device) -> Result<Session> {
     if let Some(provider) = provider(device) {
         builder = builder
             .with_execution_providers([provider])
-            .map_err(|e| anyhow!("{device:?} is not available here: {e}"))?;
+            .map_err(|e| anyhow!("{device:?} is not available here: {e}"))?
+            // On a GPU the CPU threads mostly wait: one, not spinning, leaves the cores to decoding
+            .with_intra_threads(1)
+            .map_err(|e| anyhow!("{e}"))?
+            .with_intra_op_spinning(false)
+            .map_err(|e| anyhow!("{e}"))?;
     }
     builder.commit_from_file(path).map_err(|e| anyhow!("cannot open {}: {e}", path.display()))
 }
@@ -117,11 +122,16 @@ impl Models {
 
     /// One letterboxed 320 square, CHW
     pub fn detect(&mut self, tensor: &[f32]) -> Result<Detection> {
-        let input = TensorRef::from_array_view(([1usize, 3, 320, 320], tensor))?;
+        Ok(self.detect_batch(tensor, 1)?.remove(0))
+    }
+
+    /// `batch` letterboxed 320 squares, CHW one after the other
+    pub fn detect_batch(&mut self, tensors: &[f32], batch: usize) -> Result<Vec<Detection>> {
+        let input = TensorRef::from_array_view(([batch, 3, 320, 320], tensors))?;
         let outputs = self.detector.run(ort::inputs!["image" => input])?;
         let (_, boxed) = outputs["box"].try_extract_tensor::<f32>()?;
         let (_, score) = outputs["score"].try_extract_tensor::<f32>()?;
-        Ok(Detection { boxed: [boxed[0], boxed[1], boxed[2], boxed[3]], score: score[0] })
+        Ok((0..batch).map(|i| Detection { boxed: [boxed[4 * i], boxed[4 * i + 1], boxed[4 * i + 2], boxed[4 * i + 3]], score: score[i] }).collect())
     }
 
     /// `batch` 224 squares, CHW one after the other

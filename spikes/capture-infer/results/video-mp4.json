@@ -1,0 +1,19 @@
+{
+  "codec": "h264",
+  "device": "cuda",
+  "file": "synth-23-001.mp4",
+  "file_fps": 60.0,
+  "found_share": 1.0,
+  "frames": 1108,
+  "height": 1080,
+  "ms_mean_per_frame": {
+    "crop": 1.4425389503610113,
+    "decode": 3.203580027978338,
+    "detector": 2.9931832093862805,
+    "letterbox": 0.9196838095667905,
+    "reader": 2.83786940523465
+  },
+  "precision": "fp16",
+  "processed_fps": 119.89856455912725,
+  "width": 1920
+}

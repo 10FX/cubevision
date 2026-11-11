@@ -62,3 +62,15 @@ fn cuda_refused_without_cuda() {
     let error = Models::load(&models_dir(), Device::Cuda, Precision::Fp16).err().expect("CUDA must be refused, not replaced by the CPU");
     assert!(error.to_string().to_lowercase().contains("cuda"), "{error}");
 }
+
+#[test]
+fn a_batch_gives_each_square_its_own_outputs() {
+    let reference = reference();
+    let mut models = Models::load(&models_dir(), Device::Cpu, Precision::Fp32).unwrap();
+    let detections = models.detect_batch(&fixed_input(320).repeat(3), 3).unwrap();
+    assert_eq!(detections.len(), 3);
+    for detection in &detections {
+        assert_close("box", &detection.boxed, &reference, 1e-4);
+        assert_close("score", &[detection.score], &reference, 1e-4);
+    }
+}

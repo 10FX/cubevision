@@ -23,6 +23,9 @@ pub struct Letterbox {
     pub scale: f32,
     pub ox: i32,
     pub oy: i32,
+    /// the region's corner in the frame
+    pub rx: f32,
+    pub ry: f32,
 }
 
 /// JavaScript's Math.round: halves go up
@@ -32,10 +35,16 @@ fn js_round(v: f64) -> f64 {
 
 /// The whole frame in a `size` square, bands filled with `pad`: CHW planes in 0..1
 pub fn letterbox(frame: &Frame, size: u32, pad: f32) -> (Vec<f32>, Letterbox) {
+    letterbox_region(frame, size, pad, &BoxF { x: 0.0, y: 0.0, w: frame.width as f32, h: frame.height as f32 })
+}
+
+/// A region of the frame in a `size` square; what lies outside the frame keeps `pad`
+pub fn letterbox_region(frame: &Frame, size: u32, pad: f32, region: &BoxF) -> (Vec<f32>, Letterbox) {
     let (width, height) = (frame.width as i64, frame.height as i64);
-    let scale = size as f64 / frame.width.max(frame.height) as f64;
-    let w = js_round(width as f64 * scale).max(1.0) as i64;
-    let h = js_round(height as f64 * scale).max(1.0) as i64;
+    let (rx, ry, rw, rh) = (region.x as f64, region.y as f64, region.w as f64, region.h as f64);
+    let scale = size as f64 / rw.max(rh);
+    let w = js_round(rw * scale).max(1.0) as i64;
+    let h = js_round(rh * scale).max(1.0) as i64;
     let size = size as i64;
     let (ox, oy) = ((size - w).div_euclid(2), (size - h).div_euclid(2));
     let plane = (size * size) as usize;
@@ -43,13 +52,13 @@ pub fn letterbox(frame: &Frame, size: u32, pad: f32) -> (Vec<f32>, Letterbox) {
     let span = js_round(1.0 / scale).max(1.0) as i64;
     let n = (span * span * 255) as f32;
     for y in 0..h {
-        let top = js_round((y as f64 + 0.5) / scale - span as f64 / 2.0) as i64;
+        let top = js_round(ry + (y as f64 + 0.5) / scale - span as f64 / 2.0) as i64;
         if top + span <= 0 || top >= height {
             continue;
         }
         let sy = (height - span).min(top.max(0));
         for x in 0..w {
-            let left = js_round((x as f64 + 0.5) / scale - span as f64 / 2.0) as i64;
+            let left = js_round(rx + (x as f64 + 0.5) / scale - span as f64 / 2.0) as i64;
             if left + span <= 0 || left >= width {
                 continue;
             }
@@ -69,14 +78,14 @@ pub fn letterbox(frame: &Frame, size: u32, pad: f32) -> (Vec<f32>, Letterbox) {
             out[2 * plane + o] = b as f32 / n;
         }
     }
-    (out, Letterbox { scale: scale as f32, ox: ox as i32, oy: oy as i32 })
+    (out, Letterbox { scale: scale as f32, ox: ox as i32, oy: oy as i32, rx: region.x, ry: region.y })
 }
 
 /// A box of the square (shares, x0 y0 x1 y1) back in frame pixels
 pub fn unletterbox(boxed: [f32; 4], size: u32, lb: &Letterbox) -> BoxF {
     let size = size as f32;
-    let fx = |v: f32| (v * size - lb.ox as f32) / lb.scale;
-    let fy = |v: f32| (v * size - lb.oy as f32) / lb.scale;
+    let fx = |v: f32| (v * size - lb.ox as f32) / lb.scale + lb.rx;
+    let fy = |v: f32| (v * size - lb.oy as f32) / lb.scale + lb.ry;
     BoxF { x: fx(boxed[0]), y: fy(boxed[1]), w: fx(boxed[2]) - fx(boxed[0]), h: fy(boxed[3]) - fy(boxed[1]) }
 }
 
@@ -153,6 +162,22 @@ mod tests {
         assert_eq!(tensor.len(), 3 * 320 * 320);
         assert_eq!(tensor[0], 0.5); // top band
         assert_eq!(tensor[160 * 320 + 160], 0.0); // the black frame
+    }
+
+    #[test]
+    fn a_region_fills_the_square_and_maps_back() {
+        let region = BoxF { x: 100., y: 50., w: 200., h: 200. };
+        let (_, lb) = letterbox_region(&blank(1920, 1080), 320, 0.5, &region);
+        assert_eq!((lb.ox, lb.oy, lb.scale), (0, 0, 1.6));
+        assert_eq!(unletterbox([0.0, 0.0, 1.0, 1.0], 320, &lb), region);
+    }
+
+    #[test]
+    fn a_region_past_the_frame_keeps_the_pad() {
+        let region = BoxF { x: -100., y: -100., w: 200., h: 200. };
+        let (tensor, _) = letterbox_region(&blank(1920, 1080), 320, 0.5, &region);
+        assert_eq!(tensor[0], 0.5); // above and left of the frame
+        assert_eq!(tensor[319 * 320 + 319], 0.0); // inside the black frame
     }
 
     #[test]
