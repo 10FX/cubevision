@@ -89,11 +89,12 @@ fn without_a_cube_the_reader_reads_the_centre() {
 }
 
 #[test]
+#[ignore = "needs CUBE_TEST_VIDEO: a video of a cube being solved"]
 fn a_batch_finds_what_frame_by_frame_finds() {
-    // needs ORT_DYLIB_PATH and CUBE_MODELS; the synthetic test video stands in for a solve
+    // needs ORT_DYLIB_PATH and CUBE_MODELS too
     let dir = PathBuf::from(std::env::var("CUBE_MODELS").expect("CUBE_MODELS names the models' folder"));
-    let video = Path::new("/home/thomas/TIMER/ml2/evals/synthetic-v3/synth-23-000.webm");
-    let mut reader = VideoReader::open(video, "ffmpeg").unwrap();
+    let video = PathBuf::from(std::env::var("CUBE_TEST_VIDEO").expect("CUBE_TEST_VIDEO names a solve video"));
+    let mut reader = VideoReader::open(&video, "ffmpeg").unwrap();
     let frames: Vec<Frame> = (0..20).map(|_| reader.next_frame().unwrap().unwrap()).collect();
     let mut models = Models::load(&dir, Device::Cpu, Precision::Fp32).unwrap();
     let (mut one_last, mut batch_last) = (None, None);
