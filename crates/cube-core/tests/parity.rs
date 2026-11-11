@@ -74,3 +74,19 @@ fn layers_beyond_the_cube_turn_nothing() {
 fn unknown_tokens_are_skipped() {
     assert_eq!(Cube::solved().apply("R foo U"), Cube::solved().apply("R U"));
 }
+
+#[test]
+fn goals_match_typescript() {
+    let f = fixtures();
+    let names: Vec<&str> = f["orientations"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert_eq!(ORIENTATIONS.to_vec(), names);
+    for case in f["goals"].as_array().unwrap() {
+        let stickers: [u8; 54] = numbers(&case["stickers"]).iter().map(|&s| s as u8).collect::<Vec<_>>().try_into().unwrap();
+        let cube = Cube::from_stickers(stickers);
+        assert_eq!(cross(&cube, false), case["cross"].as_bool().unwrap());
+        assert_eq!(cross(&cube, true), case["crossNeutral"].as_bool().unwrap());
+        assert_eq!(solved_slots(&cube, false) as u64, case["slots"].as_u64().unwrap());
+        assert_eq!(solved_slots(&cube, true) as u64, case["slotsNeutral"].as_u64().unwrap());
+        assert_eq!(cfop_progress(&cube) as u64, case["progress"].as_u64().unwrap());
+    }
+}
