@@ -3,6 +3,7 @@
 
 pub mod decode;
 pub mod help;
+pub mod live;
 pub mod orientation;
 pub mod pipeline;
 pub mod present;
