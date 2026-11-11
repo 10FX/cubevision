@@ -1,33 +1,92 @@
 //! Moves as cubers write them (`notation.ts`)
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Family { U, D, F, B, R, L, M, E, S, X, Y, Z }
+pub enum Family {
+    U,
+    D,
+    F,
+    B,
+    R,
+    L,
+    M,
+    E,
+    S,
+    X,
+    Y,
+    Z,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Style { Face, Wide, Lower, Slice, Range }
+pub enum Style {
+    Face,
+    Wide,
+    Lower,
+    Slice,
+    Range,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Move { pub family: Family, pub from: u32, pub to: u32, pub turns: u8, pub style: Style }
+pub struct Move {
+    pub family: Family,
+    pub from: u32,
+    pub to: u32,
+    pub turns: u8,
+    pub style: Style,
+}
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct ParsedAlg { pub moves: Vec<Move>, pub invalid: Vec<String> }
+pub struct ParsedAlg {
+    pub moves: Vec<Move>,
+    pub invalid: Vec<String>,
+}
 
 impl Family {
     /// The letter as written: faces and slices in capitals, rotations in lower case
     pub fn letter(self) -> char {
         use Family::*;
-        match self { U => 'U', D => 'D', F => 'F', B => 'B', R => 'R', L => 'L', M => 'M', E => 'E', S => 'S', X => 'x', Y => 'y', Z => 'z' }
+        match self {
+            U => 'U',
+            D => 'D',
+            F => 'F',
+            B => 'B',
+            R => 'R',
+            L => 'L',
+            M => 'M',
+            E => 'E',
+            S => 'S',
+            X => 'x',
+            Y => 'y',
+            Z => 'z',
+        }
     }
 
     fn of(letter: char) -> Option<Family> {
         use Family::*;
-        Some(match letter { 'U' => U, 'D' => D, 'F' => F, 'B' => B, 'R' => R, 'L' => L, 'M' => M, 'E' => E, 'S' => S, 'x' => X, 'y' => Y, 'z' => Z, _ => return None })
+        Some(match letter {
+            'U' => U,
+            'D' => D,
+            'F' => F,
+            'B' => B,
+            'R' => R,
+            'L' => L,
+            'M' => M,
+            'E' => E,
+            'S' => S,
+            'x' => X,
+            'y' => Y,
+            'z' => Z,
+            _ => return None,
+        })
     }
 }
 
 /// JavaScript's `\s`, which splits algorithms in ChronoCube
 pub fn js_space(c: char) -> bool {
-    matches!(c, '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
+    matches!(
+        c,
+        '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
+    )
 }
 
 /// Leading ASCII digits of `chars[at..]`: their value (saturated), their value mod 4, how many
@@ -115,7 +174,11 @@ pub fn parse_move(token: &str) -> Option<Move> {
 }
 
 pub fn format_move(m: &Move) -> String {
-    let amount = match m.turns { 1 => "", 2 => "2", _ => "'" };
+    let amount = match m.turns {
+        1 => "",
+        2 => "2",
+        _ => "'",
+    };
     let family = m.family.letter();
     let width = |to: u32| if to == 2 { String::new() } else { to.to_string() };
     match m.style {

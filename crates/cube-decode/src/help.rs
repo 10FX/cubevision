@@ -39,8 +39,14 @@ struct Followed {
 
 /// The moves given, timed against the readings, then the decoder's from where they leave the cube. Readings are
 /// sanitized first (a NaN: not seen).
-pub fn helped_solve(start: &State, readings: &[Reading], help: &[usize], decode: impl Fn(&State, &[Reading]) -> DecodeResult) -> DecodeResult {
-    let readings: Vec<Reading> = readings.iter().map(|r| Reading { faces: r.faces.iter().cloned().map(|f| f.sanitized()).collect(), ..r.clone() }).collect();
+pub fn helped_solve(
+    start: &State,
+    readings: &[Reading],
+    help: &[usize],
+    decode: impl Fn(&State, &[Reading]) -> DecodeResult,
+) -> DecodeResult {
+    let readings: Vec<Reading> =
+        readings.iter().map(|r| Reading { faces: r.faces.iter().cloned().map(|f| f.sanitized()).collect(), ..r.clone() }).collect();
     let given = follow_help(start, &readings, help);
     let decoded = given.tail.as_ref().map(|(from, rest)| decode(from, rest));
     helped_end(start, &readings, given, decoded)

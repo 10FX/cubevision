@@ -239,7 +239,11 @@ impl ScrambleFollower {
         for (k, token) in tokens.iter().enumerate() {
             let Some(m) = MOVES.iter().position(|&n| n == token) else { break };
             moves.push(m);
-            steps.push(ScrambleStep { state: state_of(&Cube::solved().apply(&tokens[..=k].join(" "))), done: (k + 1) as f64, moves: moves.clone() });
+            steps.push(ScrambleStep {
+                state: state_of(&Cube::solved().apply(&tokens[..=k].join(" "))),
+                done: (k + 1) as f64,
+                moves: moves.clone(),
+            });
         }
         ScrambleFollower { total: tokens.len() as f64, tokens, steps, index, letter_of }
     }

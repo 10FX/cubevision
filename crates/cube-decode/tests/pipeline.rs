@@ -7,7 +7,8 @@ use serde_json::Value;
 
 fn same_result(name: &str, got: &VisionResult, want: &Value) {
     let timed: Vec<(String, f64)> = got.timed.iter().map(|m| (m.token.clone(), m.t)).collect();
-    let expected: Vec<(String, f64)> = want["timed"].as_array().unwrap().iter().map(|m| (m["move"].as_str().unwrap().to_string(), num(&m["t"]))).collect();
+    let expected: Vec<(String, f64)> =
+        want["timed"].as_array().unwrap().iter().map(|m| (m["move"].as_str().unwrap().to_string(), num(&m["t"]))).collect();
     assert_eq!(timed, expected, "{name}: timed");
     assert_eq!(got.solved, want["solved"].as_bool().unwrap(), "{name}: solved");
     assert!(close(got.agreement, num(&want["agreement"])), "{name}: agreement {} against {}", got.agreement, want["agreement"]);
@@ -16,8 +17,12 @@ fn same_result(name: &str, got: &VisionResult, want: &Value) {
     assert_eq!(got.hold, want["hold"].as_str().unwrap(), "{name}: hold");
     assert_eq!(got.gaps, want["gaps"].as_array().unwrap().iter().map(num).collect::<Vec<_>>(), "{name}: gaps");
     same_view(name, &got.orientation, &want["orientation"]);
-    let notation: Vec<Vec<String>> =
-        want["notation"].as_array().unwrap().iter().map(|t| t.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect()).collect();
+    let notation: Vec<Vec<String>> = want["notation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect())
+        .collect();
     assert_eq!(got.notation, notation, "{name}: notation");
     same_reconstruction(name, &got.reconstruction, &want["reconstruction"]);
     let agree = want["frameAgreement"].as_array().unwrap();

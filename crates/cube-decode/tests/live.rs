@@ -124,7 +124,9 @@ fn follower_matches_typescript() {
 fn moves_append_and_undo_as_typescript() {
     let fixture = fixture("follower.json");
     let sequences = fixture["sequences"].as_array().unwrap();
-    for ((moves, appended), undone) in sequences.iter().zip(fixture["appended"].as_array().unwrap()).zip(fixture["undone"].as_array().unwrap()) {
+    for ((moves, appended), undone) in
+        sequences.iter().zip(fixture["appended"].as_array().unwrap()).zip(fixture["undone"].as_array().unwrap())
+    {
         let moves = usizes(moves);
         assert_eq!(moves.iter().fold(Vec::new(), |acc, &m| append_move(&acc, m)), usizes(appended), "{moves:?}");
         assert_eq!(undo_moves(&moves), usizes(undone), "{moves:?}");

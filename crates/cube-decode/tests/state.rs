@@ -39,7 +39,12 @@ fn alike_matches_typescript() {
 fn one_face(cell: Option<[f32; 6]>) -> cube_decode::Reading {
     let mut stickers = [Some([0.9, 0.02, 0.02, 0.02, 0.02, 0.02]); 9];
     stickers[0] = cell;
-    cube_decode::Reading { from: 0.0, to: 0.0, faces: vec![cube_decode::FaceReading { center: 0, stickers, rotation: None }.sanitized()], moved: None }
+    cube_decode::Reading {
+        from: 0.0,
+        to: 0.0,
+        faces: vec![cube_decode::FaceReading { center: 0, stickers, rotation: None }.sanitized()],
+        moved: None,
+    }
 }
 
 #[test]

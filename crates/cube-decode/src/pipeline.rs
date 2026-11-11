@@ -304,8 +304,11 @@ fn finish(holding: &Holding, result: DecodeResult, frames: &[FrameReadings], cam
         })
         .collect();
     // With the cube's orientation: moves as the cuber turned them, rotations included
-    let oriented: Vec<OrientedFrame> =
-        frames.iter().filter(|f| !f.faces.is_empty()).filter_map(|f| f.orientation.map(|orientation| OrientedFrame { t: f.t, orientation })).collect();
+    let oriented: Vec<OrientedFrame> = frames
+        .iter()
+        .filter(|f| !f.faces.is_empty())
+        .filter_map(|f| f.orientation.map(|orientation| OrientedFrame { t: f.t, orientation }))
+        .collect();
     let orientation = if oriented.is_empty() { None } else { cuber_view(&oriented, &moves, holding.hold, camera) };
     // Written as a reconstruction: the cross down from the start, rotations only between steps
     let tokens: Vec<String> = timed.iter().map(|m| m.token.clone()).collect();

@@ -75,6 +75,11 @@ fn the_pieces_match_typescript() {
         assert_eq!(hold as u64, w["hold"].as_u64().unwrap());
         assert!(close(angle, num(&w["angle"])), "{angle} against {}", w["angle"]);
     }
-    let spans: Vec<HoldSpan> = all["spans"].as_array().unwrap().iter().map(|s| HoldSpan { from: num(&s["from"]), hold: s["hold"].as_u64().unwrap() as usize }).collect();
+    let spans: Vec<HoldSpan> = all["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| HoldSpan { from: num(&s["from"]), hold: s["hold"].as_u64().unwrap() as usize })
+        .collect();
     assert_eq!(hold_spans(&frames, 0), spans);
 }

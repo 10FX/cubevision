@@ -9,11 +9,32 @@ fn fixtures() -> Value {
 
 fn family(name: &str) -> Family {
     use Family::*;
-    match name { "U" => U, "D" => D, "F" => F, "B" => B, "R" => R, "L" => L, "M" => M, "E" => E, "S" => S, "x" => X, "y" => Y, "z" => Z, _ => panic!("{name}") }
+    match name {
+        "U" => U,
+        "D" => D,
+        "F" => F,
+        "B" => B,
+        "R" => R,
+        "L" => L,
+        "M" => M,
+        "E" => E,
+        "S" => S,
+        "x" => X,
+        "y" => Y,
+        "z" => Z,
+        _ => panic!("{name}"),
+    }
 }
 
 fn style(name: &str) -> Style {
-    match name { "face" => Style::Face, "wide" => Style::Wide, "lower" => Style::Lower, "slice" => Style::Slice, "range" => Style::Range, _ => panic!("{name}") }
+    match name {
+        "face" => Style::Face,
+        "wide" => Style::Wide,
+        "lower" => Style::Lower,
+        "slice" => Style::Slice,
+        "range" => Style::Range,
+        _ => panic!("{name}"),
+    }
 }
 
 fn move_of(v: &Value) -> Option<Move> {
@@ -21,7 +42,13 @@ fn move_of(v: &Value) -> Option<Move> {
         return None;
     }
     let n = |k: &str| v[k].as_u64().unwrap();
-    Some(Move { family: family(v["family"].as_str().unwrap()), from: n("from") as u32, to: n("to") as u32, turns: n("turns") as u8, style: style(v["style"].as_str().unwrap()) })
+    Some(Move {
+        family: family(v["family"].as_str().unwrap()),
+        from: n("from") as u32,
+        to: n("to") as u32,
+        turns: n("turns") as u8,
+        style: style(v["style"].as_str().unwrap()),
+    })
 }
 
 #[test]

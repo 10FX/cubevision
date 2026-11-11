@@ -8,9 +8,10 @@ rewritten in Rust so that it runs faster on a PC, with the GPU you have (NVIDIA,
 CPU alone. It is a technical showcase: clone it, build it, and see what it does and how. For everyday
 use (timer, reconstructions, community), use ChronoCube.
 
-> **Status: early.** What exists today is the first step: a prototype that proves Rust can carry the
-> models, the video and the webcam. The two apps (live mode and video mode with the 3D cube) are being
-> written; the [roadmap](#roadmap) says what comes in which order.
+> **Status: early.** Two steps exist today: a prototype that proves Rust can carry the models, the video
+> and the webcam, and the two crates that turn readings into moves (`cube-core`, `cube-decode`), which
+> give ChronoCube's results to the last move. The two apps (live mode and video mode with the 3D cube)
+> are being written; the [roadmap](#roadmap) says what comes in which order.
 >
 > **Try it on Windows in two minutes:** download `cubevision-prototype-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
@@ -24,6 +25,7 @@ use (timer, reconstructions, community), use ChronoCube.
 - [Models](#models)
 - [Measured so far](#measured-so-far)
 - [Running the prototype](#running-the-prototype)
+- [The decoder, checked against ChronoCube](#the-decoder-checked-against-chronocube)
 - [Repository layout](#repository-layout)
 - [Roadmap](#roadmap)
 - [Licence](#licence)
@@ -273,15 +275,63 @@ Four tests are ignored by default; run one with `cargo test -- --ignored <name>`
 - `openvino_cpu_matches_python` needs the OpenVINO runtime (`ort\ov.ps1`).
 - `a_batch_finds_what_frame_by_frame_finds` needs `CUBE_TEST_VIDEO`, a video of a cube being solved.
 
+## The decoder, checked against ChronoCube
+
+`cube-core` and `cube-decode` are ChronoCube's TypeScript rewritten line for line, and must give the
+same results: same moves, same times, same scores to the last digit. They need neither ONNX, nor a
+camera, nor a GPU:
+
+```sh
+cargo test --workspace --release     # about two minutes; debug builds are much slower
+```
+
+Each test reads a JSON file under `crates/*/tests/fixtures/` holding inputs and what ChronoCube's
+TypeScript made of them, and asks the Rust for the same:
+
+| Fixtures | What is compared |
+|---|---|
+| `cube-core/tests/fixtures/` | cube states, notation, the 24 holds, CFOP steps |
+| `state.json`, `random.json` | scores of readings, the search on simulated solves (gaps, still frames) |
+| `videos/*.json` | four synthetic solve videos read by the public models: readings merged, the decoder, the whole result, its score against the truth, the live tracker frame by frame |
+| `help.json`, `solves.json` | moves the cuber vouches for; reconstructions written cross down |
+| `orientations.json` | the cuber's rotations from the cube's orientation, the replay track |
+| `follower.json` | how far into a scramble the cube is, the way back after a wrong turn |
+| `pixels.json` | crop motion, mirrored videos |
+| `shuffled.json` | frames at one time or going back |
+
+The fixtures are written by a generator in ChronoCube's repository, from seeded random cases and
+from synthetic (Blender) videos only; no real video or photo is in this repository. With ChronoCube
+checked out next to cubevision, they are written again by:
+
+```sh
+npx vitest run --config vitest.vision.config.mts scripts/vision/fixtures.test.ts
+```
+
 ## Repository layout
 
 ```
+crates/cube-core/         cube state, notation, holds, CFOP steps
+crates/cube-decode/       from readings to moves (see the table below)
 docs/superpowers/specs/   the design (in French): modes, architecture, models, tests
 docs/superpowers/plans/   the plan of each step
 spikes/capture-infer/     the prototype: models, video and webcam from Rust, with its results
 ```
 
-The apps will be a Rust workspace, one crate per job, each knowing nothing of the ones after it:
+`cube-decode`, module by module:
+
+| Module | Job |
+|---|---|
+| `state`, `reading` | a cube as 54 stickers, what a frame reads of it, how well a reading fits a state |
+| `decode` | the search: the moves that best explain the readings, gaps where the turns were lost |
+| `pipeline` | frames read to a result: readings merged, decoded, written, timed |
+| `help` | moves the cuber vouches for, the decoder finds the rest |
+| `present`, `reconstruct` | the solve written as a cuber writes it, cross down, split in CFOP steps |
+| `orientation` | the cuber's rotations and the cube's orientation through the solve |
+| `live` | the live tracker and the scramble follower |
+| `motion`, `mirror` | how much the crop moved; whether the video is mirrored |
+| `truth` | a result scored against the truth of a synthetic video |
+
+The apps are a Rust workspace, one crate per job, each knowing nothing of the ones after it:
 
 | Crate | Job |
 |---|---|
@@ -292,13 +342,12 @@ The apps will be a Rust workspace, one crate per job, each knowing nothing of th
 | `cube-view` | the 3D cube and the window |
 | `cubevision` | the program and its commands |
 
-`cube-core` and `cube-decode` need neither ONNX, nor a camera, nor a GPU, and are tested on their own
-against results produced by ChronoCube's TypeScript.
+The first two exist; the others are to come.
 
 ## Roadmap
 
 1. ~~Prototype: models, video and webcam from Rust, measured.~~ Done; webcam at 30 fps still to confirm.
-2. `cube-core`, then `cube-decode`, checked against ChronoCube's results.
+2. ~~`cube-core`, then `cube-decode`, checked against ChronoCube's results.~~ Done.
 3. `cube-infer` and `cube-capture`.
 4. Video mode in JSON, compared with the web app on the same synthetic videos.
 5. `cube-view`: 3D cube, live mode, replay.

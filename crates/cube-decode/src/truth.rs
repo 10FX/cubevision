@@ -1,7 +1,51 @@
-//! Moves brought to one form (ChronoCube's truth.ts): quarter turns of the outer faces, named by the cube's own faces
-//! (the scramble's), in a canonical order. An M2 found as R2 L2 x2, a Rw as L x, or L R as R L, are then the same turns.
+//! A video reconstruction scored against the truth of a synthetic solve video (ChronoCube's truth.ts): moves exact,
+//! timing, CFOP stages and the cuber's rotations.
+//!
+//! The moves found and the moves played are first brought to one form: quarter turns of the outer faces, named by the
+//! cube's own faces (the scramble's), in a canonical order. An M2 found as R2 L2 x2, a Rw as L x, or L R as R L, are
+//! then the same turns, and the distance between the two lists (Levenshtein, in quarter turns) counts only what was
+//! really missed, added or mistaken.
 
-use cube_core::{Cube, FACES, Family, parse_move};
+use cube_core::{Cube, FACES, Family, js_space, parse_move};
+
+use crate::decode::js_round;
+use crate::pipeline::VisionResult;
+use crate::reconstruct::Phase;
+
+/// The stages a synthetic video tells the end of
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    Cross,
+    F2l,
+    Oll,
+    Pll,
+}
+
+impl Stage {
+    pub const ALL: [Stage; 4] = [Stage::Cross, Stage::F2l, Stage::Oll, Stage::Pll];
+
+    /// The phase of a reconstruction that ends the stage (the last pair for F2L)
+    fn phase(self) -> Phase {
+        match self {
+            Stage::Cross => Phase::Cross,
+            Stage::F2l => Phase::F2l4,
+            Stage::Oll => Phase::Oll,
+            Stage::Pll => Phase::Pll,
+        }
+    }
+}
+
+/// truth.json of a synthetic video
+#[derive(Clone, Debug, PartialEq)]
+pub struct Truth {
+    pub scramble: String,
+    /// As the cuber turns it: rotations, wide moves and slices included
+    pub solution: String,
+    /// Each move played: the move, its start and end (ms of the video), its stage
+    pub moves: Vec<(String, f64, f64, String)>,
+    /// End of each stage (cross, F2L, OLL, PLL), ms of the video
+    pub stages: [f64; 4],
+}
 
 /// A quarter turn of a face of the cube (clockwise: +1), and when it was done
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -93,4 +137,89 @@ pub fn quarters(moves: &[(&str, f64)], hold: &str) -> Vec<Quarter> {
         i = j;
     }
     out
+}
+
+/// Levenshtein distance between two lists of quarter turns, and the pairs it matched as equal
+pub fn align(a: &[Quarter], b: &[Quarter]) -> (usize, Vec<(Quarter, Quarter)>) {
+    let same = |p: &Quarter, q: &Quarter| p.face == q.face && p.dir == q.dir;
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + !same(&a[i - 1], &b[j - 1]) as usize);
+        }
+    }
+    let mut matched = Vec::new();
+    let (mut i, mut j) = (a.len(), b.len());
+    while i > 0 && j > 0 {
+        if same(&a[i - 1], &b[j - 1]) && d[i][j] == d[i - 1][j - 1] {
+            matched.push((a[i - 1], b[j - 1]));
+            i -= 1;
+            j -= 1;
+        } else if d[i][j] == d[i - 1][j - 1] + 1 {
+            i -= 1;
+            j -= 1;
+        } else if d[i][j] == d[i - 1][j] + 1 {
+            i -= 1;
+        } else {
+            j -= 1;
+        }
+    }
+    matched.reverse();
+    (d[a.len()][b.len()], matched)
+}
+
+/// Rotations, wide moves and slices in a solution: each turns the cube in the hands
+pub fn rotations_in(solution: &str) -> usize {
+    use Family::*;
+    solution.split(js_space).filter_map(parse_move).filter(|m| matches!(m.family, X | Y | Z | M | E | S) || m.to > 1).count()
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TruthScore {
+    /// Quarter turns played
+    pub quarters: usize,
+    pub distance: usize,
+    /// Share of the quarter turns found exactly (1 - distance / quarters)
+    pub exact: f64,
+    /// Median gap between a move found and the end of the move played, ms
+    pub time_median: Option<f64>,
+    /// End of each stage found (cross, F2L, OLL, PLL), minus the truth's, ms (None: stage not found)
+    pub stages: [Option<f64>; 4],
+    /// Rotations played, and found (None: the reader gave no orientation)
+    pub rotations: (usize, Option<usize>),
+}
+
+fn median(mut xs: Vec<f64>) -> Option<f64> {
+    if xs.is_empty() {
+        return None;
+    }
+    xs.sort_by(f64::total_cmp);
+    let n = xs.len();
+    Some(if n % 2 == 1 { xs[(n - 1) / 2] } else { (xs[n / 2 - 1] + xs[n / 2]) / 2.0 })
+}
+
+pub fn score_against_truth(result: &VisionResult, truth: &Truth) -> TruthScore {
+    let played: Vec<(&str, f64)> = truth.moves.iter().map(|m| (m.0.as_str(), m.2)).collect();
+    let played = quarters(&played, "");
+    let found: Vec<(&str, f64)> = result.timed.iter().map(|m| (m.token.as_str(), m.t)).collect();
+    let found = quarters(&found, &result.hold);
+    let (distance, matched) = align(&played, &found);
+    let stages = std::array::from_fn(|s| {
+        let split = result.reconstruction.splits.iter().find(|split| split.phase == Stage::ALL[s].phase())?;
+        Some(js_round(result.reconstruction.start + split.end - truth.stages[s]))
+    });
+    TruthScore {
+        quarters: played.len(),
+        distance,
+        exact: if played.is_empty() { 1.0 } else { (1.0 - distance as f64 / played.len() as f64).max(0.0) },
+        time_median: median(matched.iter().map(|(p, q)| (q.t - p.t).abs()).collect()),
+        stages,
+        rotations: (rotations_in(&truth.solution), result.orientation.as_ref().map(|o| o.rotations as usize)),
+    }
 }

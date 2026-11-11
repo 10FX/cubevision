@@ -50,7 +50,19 @@ pub struct DecodeOptions {
 
 impl Default for DecodeOptions {
     fn default() -> Self {
-        DecodeOptions { beam: 1024, deep: 64, deeper: 8, move_cost: 1.8, slices: true, slice_cost: 2.2, misread: 0.5, correlation: 300.0, fresh: 0.5, alike_share: 0.5, still: true }
+        DecodeOptions {
+            beam: 1024,
+            deep: 64,
+            deeper: 8,
+            move_cost: 1.8,
+            slices: true,
+            slice_cost: 2.2,
+            misread: 0.5,
+            correlation: 300.0,
+            fresh: 0.5,
+            alike_share: 0.5,
+            still: true,
+        }
     }
 }
 
@@ -81,7 +93,8 @@ fn pick(gated: DecodeResult, free: DecodeResult) -> DecodeResult {
 /// The turns from `start` to the solved cube that agree best with the readings (faces named by centre colour), with
 /// their times, and how well they explain the readings. Readings are sanitized first (a NaN: not seen).
 pub fn decode_solve(start: &State, readings: &[Reading], o: &DecodeOptions) -> DecodeResult {
-    let readings: Vec<Reading> = readings.iter().map(|r| Reading { faces: r.faces.iter().cloned().map(|f| f.sanitized()).collect(), ..r.clone() }).collect();
+    let readings: Vec<Reading> =
+        readings.iter().map(|r| Reading { faces: r.faces.iter().cloned().map(|f| f.sanitized()).collect(), ..r.clone() }).collect();
     let free = DecodeOptions { still: false, ..o.clone() };
     if !o.still || !readings.iter().any(|r| r.moved == Some(false)) {
         return decode_with(start, &readings, &free);
@@ -236,7 +249,8 @@ fn join_passes(start: &State, plan: &Plan, forward: &[Step], reversed: &[Step], 
         let top = |step: &Step| step.scores.len().min(16);
         let starts: Vec<State> = (0..top(&forward[k - 1])).map(|i| state_at(start, forward, k - 1, i, false, o.slices)).collect();
         let ends: Vec<State> = (0..top(backward(k))).map(|j| state_at(&solved, reversed, n - 1 - k, j, true, o.slices)).collect();
-        let met = bridge(&starts, &forward[k - 1].scores[..starts.len()], &ends, &backward(k).scores[..ends.len()], o, fits[k].min(8), floor);
+        let met =
+            bridge(&starts, &forward[k - 1].scores[..starts.len()], &ends, &backward(k).scores[..ends.len()], o, fits[k].min(8), floor);
         if let Some(met) = met
             && joined.as_ref().is_none_or(|(b, _)| met.total > b.total)
         {

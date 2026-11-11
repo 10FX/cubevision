@@ -33,12 +33,8 @@ pub fn apply_move(state: &State, mv: usize) -> State {
 }
 
 /// A face read in rotation r: cell i of the reading is sticker ROT[r][i] of the face
-pub const ROT: [[usize; 9]; 4] = [
-    [0, 1, 2, 3, 4, 5, 6, 7, 8],
-    [6, 3, 0, 7, 4, 1, 8, 5, 2],
-    [8, 7, 6, 5, 4, 3, 2, 1, 0],
-    [2, 5, 8, 1, 4, 7, 0, 3, 6],
-];
+pub const ROT: [[usize; 9]; 4] =
+    [[0, 1, 2, 3, 4, 5, 6, 7, 8], [6, 3, 0, 7, 4, 1, 8, 5, 2], [8, 7, 6, 5, 4, 3, 2, 1, 0], [2, 5, 8, 1, 4, 7, 0, 3, 6]];
 
 /// A face read in a frame may be wrong altogether (a lattice across a hand, stickers swapped by motion
 /// blur, a face seen edge-on): with this probability it says nothing about the cube, and a wrong reading

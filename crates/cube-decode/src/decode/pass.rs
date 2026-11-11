@@ -23,7 +23,14 @@ pub struct Step {
 /// Candidates come best first by their score so far (each state kept, sorted, with no turn, one, two…); a
 /// candidate's hash is its parent's with the terms of the stickers turned changed, and a state met again came a
 /// worse way. The reading scores them until none can enter the beam.
-pub fn pass(start: &State, readings: &[&Prepared], fits: &[Option<usize>], weights: &[f64], o: &DecodeOptions, backwards: bool) -> Vec<Step> {
+pub fn pass(
+    start: &State,
+    readings: &[&Prepared],
+    fits: &[Option<usize>],
+    weights: &[f64],
+    o: &DecodeOptions,
+    backwards: bool,
+) -> Vec<Step> {
     let keep = (1.0 - o.misread).ln();
     let seqs: Vec<&Sequences> = (0..=4).map(|len| sequences(len, o.slices)).collect();
     let z = zobrist_table();

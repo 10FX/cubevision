@@ -4,10 +4,8 @@ use crate::cube::Cube;
 
 /// The 24 ways to hold a cube: a rotation, then y turns
 pub const ORIENTATIONS: [&str; 24] = [
-    "", "x", "x2", "x'", "z", "z'",
-    "y", "x y", "x2 y", "x' y", "z y", "z' y",
-    "y2", "x y2", "x2 y2", "x' y2", "z y2", "z' y2",
-    "y'", "x y'", "x2 y'", "x' y'", "z y'", "z' y'",
+    "", "x", "x2", "x'", "z", "z'", "y", "x y", "x2 y", "x' y", "z y", "z' y", "y2", "x y2", "x2 y2", "x' y2", "z y2", "z' y2", "y'",
+    "x y'", "x2 y'", "x' y'", "z y'", "z' y'",
 ];
 
 const U: usize = 0;

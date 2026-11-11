@@ -24,7 +24,8 @@ pub type Mat3 = [f64; 9];
 pub type Quat = [f64; 4];
 
 /// Outward normal of each face, faces U R F D L B
-pub const FACE_NORMALS: [[f64; 3]; 6] = [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, -1.0]];
+pub const FACE_NORMALS: [[f64; 3]; 6] =
+    [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, -1.0]];
 /// A hold is accepted within this angle of the orientation seen, degrees
 pub const ACCEPT: f64 = 35.0;
 /// A new hold must be seen this long to count, ms
@@ -57,7 +58,8 @@ fn inverse(a: &Mat3) -> Mat3 {
     let det = m0 * c0 + m1 * c1 + m2 * c2;
     // JavaScript's `|| 1e-12`: zero and NaN alike
     let det = if det == 0.0 || det.is_nan() { 1e-12 } else { det };
-    [c0, m2 * m7 - m1 * m8, m1 * m5 - m2 * m4, c1, m0 * m8 - m2 * m6, m2 * m3 - m0 * m5, c2, m1 * m6 - m0 * m7, m0 * m4 - m1 * m3].map(|x| x / det)
+    [c0, m2 * m7 - m1 * m8, m1 * m5 - m2 * m4, c1, m0 * m8 - m2 * m6, m2 * m3 - m0 * m5, c2, m1 * m6 - m0 * m7, m0 * m4 - m1 * m3]
+        .map(|x| x / det)
 }
 
 /// The rotation nearest a matrix (polar decomposition, Newton's iteration)
@@ -257,7 +259,9 @@ pub fn cuber_notation(moves: &[TimedMove], spans: &[HoldSpan], scramble_hold: us
     }
     let mut out: Vec<Vec<String>> = vec![Vec::new(); moves.len()];
     let letter = |m: &str, hold: usize| holds[hold].letter_of[FACES.iter().position(|&f| m.starts_with(f)).unwrap()];
-    let near_event = |events: &[Event], t: f64, fits: &dyn Fn(&Mat3) -> bool| events.iter().position(|e| !e.used && (e.t - t).abs() <= TOGETHER && fits(&e.q));
+    let near_event = |events: &[Event], t: f64, fits: &dyn Fn(&Mat3) -> bool| {
+        events.iter().position(|e| !e.used && (e.t - t).abs() <= TOGETHER && fits(&e.q))
+    };
     let mut i = 0;
     while i < moves.len() {
         let TimedMove { token, t } = &moves[i];
@@ -554,8 +558,11 @@ pub fn cuber_view(frames: &[OrientedFrame], moves: &[TimedMove], scramble_hold: 
     let start = snap(&mean_rotation(first.iter().map(|f| &f.orientation))).0;
     let spans = hold_spans(&cuber, start);
     let notation = cuber_notation(moves, &spans, scrambled);
-    let rotations =
-        notation.iter().flatten().filter(|tok| tok.starts_with(['x', 'y', 'z']) || tok.contains('w') || tok.starts_with(['M', 'E', 'S'])).count() as u32;
+    let rotations = notation
+        .iter()
+        .flatten()
+        .filter(|tok| tok.starts_with(['x', 'y', 'z']) || tok.contains('w') || tok.starts_with(['M', 'E', 'S']))
+        .count() as u32;
     // Relative to the hold that scrambled: the replay starts from the cube as it was scrambled
     Some(OrientationResult { notation, track: encode_track(&cuber, &held.matrix), rotations })
 }
@@ -577,7 +584,8 @@ mod tests {
 
     #[test]
     fn a_track_decodes_to_its_orientations() {
-        let frames: Vec<OrientedFrame> = (0..30).map(|i| OrientedFrame { t: i as f64 * 33.0, orientation: rotation_of(if i < 15 { "" } else { "y" }) }).collect();
+        let frames: Vec<OrientedFrame> =
+            (0..30).map(|i| OrientedFrame { t: i as f64 * 33.0, orientation: rotation_of(if i < 15 { "" } else { "y" }) }).collect();
         let track = encode_track(&frames, &IDENTITY).unwrap();
         let samples = decode_track(&track);
         let q = orientation_at(&track, &samples, 0.0);

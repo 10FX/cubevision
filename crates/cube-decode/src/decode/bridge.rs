@@ -16,7 +16,15 @@ pub struct Bridge {
 
 /// Turns joining one of the best states before a gap to one of the best after (up to four from each side, `most`
 /// in all), scoring above `floor`
-pub fn bridge(before: &[State], before_scores: &[f64], after: &[State], after_scores: &[f64], o: &DecodeOptions, most: usize, floor: f64) -> Option<Bridge> {
+pub fn bridge(
+    before: &[State],
+    before_scores: &[f64],
+    after: &[State],
+    after_scores: &[f64],
+    o: &DecodeOptions,
+    most: usize,
+    floor: f64,
+) -> Option<Bridge> {
     let (move_cost, slice_cost) = (o.move_cost, o.slice_cost);
     let z = zobrist_table();
     let depth = most.min(4);
@@ -25,7 +33,8 @@ pub fn bridge(before: &[State], before_scores: &[f64], after: &[State], after_sc
     // From after: the states up to four turns before it (hashed from its own, over the stickers turned), the best way to each
     let mut reach = Table::default();
     reach.reset(count);
-    let (mut total, mut from, mut length, mut sequence) = (vec![0f64; count], vec![0usize; count], vec![0usize; count], vec![0usize; count]);
+    let (mut total, mut from, mut length, mut sequence) =
+        (vec![0f64; count], vec![0usize; count], vec![0usize; count], vec![0usize; count]);
     let mut used = 0usize;
     for (b, state) in after.iter().enumerate() {
         let h0 = zobrist(state);
@@ -86,7 +95,13 @@ pub fn bridge(before: &[State], before_scores: &[f64], after: &[State], after_sc
                 if !(0..54).all(|i| state[q.perms[s * 54 + i] as usize] == there[back[at + i] as usize]) {
                     continue;
                 }
-                best = Some(Bridge { total: sum, a, b: from[c], first: q.moves[s].clone(), second: seqs[length[c]].moves[sequence[c]].clone() });
+                best = Some(Bridge {
+                    total: sum,
+                    a,
+                    b: from[c],
+                    first: q.moves[s].clone(),
+                    second: seqs[length[c]].moves[sequence[c]].clone(),
+                });
             }
         }
     }

@@ -1,10 +1,10 @@
 //! Fixtures written by ChronoCube's scripts/vision/fixtures.test.ts, read into this crate's types
 #![allow(dead_code)]
 
-use cube_decode::*;
 use cube_decode::decode::DecodeResult;
 use cube_decode::orientation::OrientationResult;
 use cube_decode::reconstruct::Reconstruction;
+use cube_decode::*;
 use serde_json::Value;
 
 pub fn fixture(name: &str) -> Value {
@@ -63,7 +63,13 @@ pub fn frame(v: &Value) -> FrameReadings {
         let xs: Vec<f64> = o.as_array().unwrap().iter().map(num).collect();
         xs.try_into().unwrap()
     });
-    FrameReadings { t: num(&v["t"]), faces: faces(&v["faces"]), orientation, turning: v.get("turning").filter(|t| !t.is_null()).map(num), motion }
+    FrameReadings {
+        t: num(&v["t"]),
+        faces: faces(&v["faces"]),
+        orientation,
+        turning: v.get("turning").filter(|t| !t.is_null()).map(num),
+        motion,
+    }
 }
 
 /// Equal to 1e-9, relatively; infinities equal to themselves
@@ -74,7 +80,11 @@ pub fn close(a: f64, b: f64) -> bool {
 /// The synthetic videos' fixtures: (name, content)
 pub fn video_fixtures() -> Vec<(String, Value)> {
     let dir = format!("{}/tests/fixtures/videos", env!("CARGO_MANIFEST_DIR"));
-    let mut names: Vec<_> = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{dir}: {e}")).map(|e| e.unwrap().file_name().into_string().unwrap()).filter(|n| n.ends_with(".json")).collect();
+    let mut names: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{dir}: {e}"))
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.ends_with(".json"))
+        .collect();
     names.sort();
     names.into_iter().map(|n| (n.trim_end_matches(".json").to_string(), fixture(&format!("videos/{n}")))).collect()
 }
@@ -90,11 +100,17 @@ pub fn readings(v: &Value) -> Vec<Reading> {
 /// The decode against what decodeSolve gave: the same moves at the same times, the same states, the same verdict
 pub fn same_decode(name: &str, got: &DecodeResult, want: &Value) {
     let moves: Vec<(String, f64)> = got.search.moves.iter().map(|m| (m.token.clone(), m.t)).collect();
-    let expected: Vec<(String, f64)> = want["moves"].as_array().unwrap().iter().map(|m| (m["move"].as_str().unwrap().to_string(), num(&m["t"]))).collect();
+    let expected: Vec<(String, f64)> =
+        want["moves"].as_array().unwrap().iter().map(|m| (m["move"].as_str().unwrap().to_string(), num(&m["t"]))).collect();
     assert_eq!(moves, expected, "{name}: moves");
     assert_eq!(got.search.solved, want["solved"].as_bool().unwrap(), "{name}: solved");
     assert_eq!(got.gaps, want["gaps"].as_array().unwrap().iter().map(num).collect::<Vec<_>>(), "{name}: gaps");
-    assert!(close(got.search.agreement, num(&want["agreement"])), "{name}: agreement {} against {}", got.search.agreement, want["agreement"]);
+    assert!(
+        close(got.search.agreement, num(&want["agreement"])),
+        "{name}: agreement {} against {}",
+        got.search.agreement,
+        want["agreement"]
+    );
     let states: Vec<_> = got.search.path.iter().map(|(s, _)| s.to_vec()).collect();
     let expected: Vec<_> = want["path"].as_array().unwrap().iter().map(|s| state(s).to_vec()).collect();
     assert_eq!(states, expected, "{name}: path");
@@ -127,8 +143,12 @@ pub fn same_view(name: &str, got: &Option<OrientationResult>, want: &Value) {
         return;
     };
     assert!(!want.is_null(), "{name}: a view, ChronoCube has none");
-    let notation: Vec<Vec<String>> =
-        want["notation"].as_array().unwrap().iter().map(|t| t.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect()).collect();
+    let notation: Vec<Vec<String>> = want["notation"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect())
+        .collect();
     assert_eq!(got.notation, notation, "{name}: notation");
     assert_eq!(got.rotations as u64, want["rotations"].as_u64().unwrap(), "{name}: rotations");
     match (&got.track, want.get("track")) {

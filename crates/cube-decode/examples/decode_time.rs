@@ -26,16 +26,31 @@ fn main() {
                 .iter()
                 .map(|f| FaceReading {
                     center: f["center"].as_u64().unwrap() as u8,
-                    stickers: f["stickers"].as_array().unwrap().iter().map(|c| (!c.is_null()).then(|| f32s(c))).collect::<Vec<_>>().try_into().unwrap(),
+                    stickers: f["stickers"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|c| (!c.is_null()).then(|| f32s(c)))
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
                     rotation: f.get("rotation").filter(|r| !r.is_null()).map(f32s),
                 })
                 .collect(),
         })
         .collect();
     let span = one.last().unwrap().to + 100.0;
-    let readings: Vec<Reading> = (0..repeat).flat_map(|k| one.iter().map(move |r| Reading { from: r.from + k as f64 * span, to: r.to + k as f64 * span, ..r.clone() })).collect();
+    let readings: Vec<Reading> = (0..repeat)
+        .flat_map(|k| one.iter().map(move |r| Reading { from: r.from + k as f64 * span, to: r.to + k as f64 * span, ..r.clone() }))
+        .collect();
     let start = cube_decode::state::state_of(&cube_core::Cube::solved().apply(v["scramble"].as_str().unwrap()));
     let t = std::time::Instant::now();
     let got = decode_solve(&start, &readings, &DecodeOptions::default());
-    println!("{} readings, {} moves, solved {}, {:.2} s", readings.len(), got.search.moves.len(), got.search.solved, t.elapsed().as_secs_f64());
+    println!(
+        "{} readings, {} moves, solved {}, {:.2} s",
+        readings.len(),
+        got.search.moves.len(),
+        got.search.solved,
+        t.elapsed().as_secs_f64()
+    );
 }

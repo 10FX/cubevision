@@ -29,7 +29,11 @@ fn motion_matches_typescript() {
             assert_eq!(thumb, want, "{what}: thumbnail");
             let flipped = flip_frame(&frame);
             assert_eq!(flipped.len(), frame.data.len(), "{what}: flipped size");
-            assert_eq!(flipped.iter().fold(7u64, |h, &b| (h * 31 + b as u64) % 1_000_000_007), f["flipped"].as_u64().unwrap(), "{what}: flipped");
+            assert_eq!(
+                flipped.iter().fold(7u64, |h, &b| (h * 31 + b as u64) % 1_000_000_007),
+                f["flipped"].as_u64().unwrap(),
+                "{what}: flipped"
+            );
             let start: Vec<u8> = ints(&f["flippedStart"]).iter().map(|&b| b as u8).collect();
             assert_eq!(&flipped[..start.len()], start.as_slice(), "{what}: flipped start");
             assert_eq!(flip_frame(&Frame { data: &flipped, width, height }), frame.data, "{what}: flipped twice");

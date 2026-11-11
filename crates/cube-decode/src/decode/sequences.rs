@@ -68,7 +68,16 @@ pub fn sequences(length: usize, slices: bool) -> &'static Sequences {
 fn build(length: usize, with_slices: bool) -> Sequences {
     let identity: Vec<u8> = (0..54).collect();
     if length == 0 {
-        return Sequences { moves: vec![vec![]], slices: vec![0], perms: identity.clone(), inverse: identity, moved: vec![], offsets: vec![0, 0], pairs: vec![], back_pairs: vec![] };
+        return Sequences {
+            moves: vec![vec![]],
+            slices: vec![0],
+            perms: identity.clone(),
+            inverse: identity,
+            moved: vec![],
+            offsets: vec![0, 0],
+            pairs: vec![],
+            back_pairs: vec![],
+        };
     }
     let shorter = sequences(length - 1, with_slices);
     let count = tokens().len() - if with_slices { 0 } else { 9 };
