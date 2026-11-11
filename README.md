@@ -10,8 +10,12 @@ use (timer, reconstructions, community), use ChronoCube.
 
 > **Status: early.** What exists today is the first step: a prototype that proves Rust can carry the
 > models, the video and the webcam. The two apps (live mode and video mode with the 3D cube) are being
-> written; the [roadmap](#roadmap) says what comes in which order. The models are not downloadable yet:
-> see [Models](#models).
+> written; the [roadmap](#roadmap) says what comes in which order.
+>
+> **Try it on Windows in two minutes:** download `cubevision-prototype-windows-x64.zip` from the
+> [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
+> `test.bat`. It measures the models on your GPU (any brand) and CPU, and your webcam, and writes
+> `results.txt`. Nothing to install.
 
 ## Contents
 
@@ -130,25 +134,21 @@ back to the CPU.
 
 | Model | Network | Input | Trained on |
 |---|---|---|---|
-| Detector | SSDLite320, MobileNetV3 | whole frame, 320×320 | COCO-pretrained weights, then Blender renders |
-| Reader v7 | MobileNetV4 conv medium | crop of the cube, 224×224 | 646,053 Blender renders, from scratch |
+| Detector v4 | SSDLite320, MobileNetV3 | whole frame, 320×320 | torchvision's COCO weights, then Blender renders |
+| Reader v7 | MobileNetV4 conv medium | crop of the cube, 224×224 | timm's ImageNet backbone, then 646,053 Blender renders |
 
-The renders are synthetic cubes in random states, with hands, lighting and blur, drawn by Blender over
-background photos, part of them from [COCO](https://cocodataset.org). No real footage of anyone is used.
-COCO photos are not redistributed here; the training code (to come in `training/`) will download them
-for whoever wants to retrain.
+The renders are synthetic cubes in random states, with 3D hands, lighting and blur, drawn by Blender
+over background photos from [COCO](https://cocodataset.org). No real footage of anyone is used. COCO
+photos are not redistributed here; the training code (to come in `training/`) will download them for
+whoever wants to retrain.
 
 On 39 synthetic test solves, v7 reconstructs 31 exactly. ChronoCube uses a variant fine-tuned on real
 footage, which is not published, so cubevision does not yet promise to reconstruct real videos reliably.
 
-**Download:** the models will be published in this repository's GitHub Releases (Apache-2.0), fetched by
-a `cubevision fetch-models` command. Until then, the prototype needs a folder holding these four files,
-named in `CUBE_MODELS`:
-
-```
-cube-detector.fp16.onnx   cube-detector.fp32.onnx
-cube-reader.fp16.onnx     cube-reader.fp32.onnx
-```
+**Download:** `cubevision-models-v7.zip` in the
+[releases](https://github.com/10FX/cubevision/releases) (Apache-2.0). Unzip it and name its folder in
+`CUBE_MODELS`. It holds the detector and the reader in fp16 (GPU) and fp32 (CPU), and their metadata
+with validation figures and SHA-256 sums. A `cubevision fetch-models` command will do this for the apps.
 
 ## Measured so far
 
@@ -170,6 +170,11 @@ The prototype, on an RTX 5060 Ti and an i5-12400F. Raw numbers in
 The prototype in [`spikes/capture-infer`](spikes/capture-infer) is a measuring tool: it prints JSON and
 does not show moves yet. Its program is called `spike`.
 
+On Windows, the ready-made zip of the [latest release](https://github.com/10FX/cubevision/releases/latest)
+is the quickest way: `spike.exe`, ONNX Runtime 1.24.4 with DirectML (Intel, AMD and NVIDIA GPUs), the
+models, and `test.bat`, which runs the commands below and writes `results.txt`. Its `README.txt` shows
+how to run them by hand. The rest of this section builds from source.
+
 ### Requirements
 
 - [rustup](https://rustup.rs). The toolchain is pinned in `rust-toolchain.toml` (Rust 1.92.0) and is
@@ -178,7 +183,7 @@ does not show moves yet. Its program is called `spike`.
   PyPI (with CUDA 13 and cuDNN for NVIDIA); you write no Python.
 - [ffmpeg](https://ffmpeg.org) and ffprobe, for videos and for the tests.
 - For CUDA, an NVIDIA driver recent enough for CUDA 13. On WSL2 the Windows driver is enough.
-- The four model files (see [Models](#models)).
+- The models (see [Models](#models)).
 
 ### Linux or WSL2
 
@@ -186,7 +191,7 @@ does not show moves yet. Its program is called `spike`.
 cd spikes/capture-infer
 ./setup-ort.sh                       # ONNX Runtime 1.31.1 into ort/, writes ort/env
 . ort/env                            # tells the program where ONNX Runtime is
-export CUBE_MODELS=/path/to/models   # the folder with the four .onnx files
+export CUBE_MODELS=/path/to/cubevision-models-v7
 cargo build --release
 ```
 
@@ -198,7 +203,7 @@ WSL2 does not see the webcam, so the `cam` command is Windows only.
 cd spikes\capture-infer
 .\setup-ort.ps1                      # ONNX Runtime 1.31.1 (CUDA) into ort\venv, 1.24.4 (DirectML) into ort\dml
 . .\ort\cuda.ps1                     # or . .\ort\dml.ps1 for DirectML
-$env:CUBE_MODELS = 'C:\path\to\models'
+$env:CUBE_MODELS = 'C:\path\to\cubevision-models-v7'
 cargo build --release
 ```
 
@@ -291,9 +296,11 @@ against results produced by ChronoCube's TypeScript.
 3. `cube-infer` and `cube-capture`.
 4. Video mode in JSON, compared with the web app on the same synthetic videos.
 5. `cube-view`: 3D cube, live mode, replay.
-6. `training/` (Blender renders, training, export), `cubevision bench`, CI, models in Releases.
+6. `training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.
 7. A larger reader for the PC, trained on renders only.
 
 ## Licence
 
-Apache-2.0 for the code and, once published, the models. See [LICENSE](LICENSE).
+Apache-2.0 for the code and the models. See [LICENSE](LICENSE). The Windows zip also carries ONNX
+Runtime (MIT), DirectML and the Visual C++ runtime from Microsoft, under their own terms (its
+`licenses` folder).
