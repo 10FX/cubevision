@@ -1,0 +1,15 @@
+{
+  "detector_ms": {
+    "p50": 4.2548,
+    "p95": 4.644299999999999
+  },
+  "device": "cpu",
+  "frames": 1395,
+  "precision": "fp32",
+  "reader_batch8_ms_per_image": 8.423925,
+  "reader_ms": {
+    "p50": 10.3018,
+    "p95": 11.040899999999999
+  },
+  "total_p95_ms": 15.6436
+}

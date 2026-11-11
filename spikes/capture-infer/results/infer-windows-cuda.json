@@ -1,0 +1,15 @@
+{
+  "detector_ms": {
+    "p50": 4.0006,
+    "p95": 5.173
+  },
+  "device": "cuda",
+  "frames": 1748,
+  "precision": "fp16",
+  "reader_batch8_ms_per_image": 1.1193875,
+  "reader_ms": {
+    "p50": 6.9623,
+    "p95": 8.9728
+  },
+  "total_p95_ms": 13.8113
+}

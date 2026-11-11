@@ -1,0 +1,15 @@
+{
+  "detector_ms": {
+    "p50": 3.6172999999999997,
+    "p95": 5.0275
+  },
+  "device": "directml",
+  "frames": 1998,
+  "precision": "fp16",
+  "reader_batch8_ms_per_image": 9.436512500000001,
+  "reader_ms": {
+    "p50": 5.947,
+    "p95": 8.2574
+  },
+  "total_p95_ms": 12.6787
+}

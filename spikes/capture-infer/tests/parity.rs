@@ -49,3 +49,16 @@ fn check(device: Device, precision: Precision, tolerance: f32) {
 fn cpu_fp32_matches_python() {
     check(Device::Cpu, Precision::Fp32, 1e-4);
 }
+
+#[test]
+#[ignore = "needs a CUDA runtime"]
+fn cuda_fp16_is_close_to_python() {
+    check(Device::Cuda, Precision::Fp16, 1e-2);
+}
+
+#[test]
+#[ignore = "needs a CPU-only runtime"]
+fn cuda_refused_without_cuda() {
+    let error = Models::load(&models_dir(), Device::Cuda, Precision::Fp16).err().expect("CUDA must be refused, not replaced by the CPU");
+    assert!(error.to_string().to_lowercase().contains("cuda"), "{error}");
+}
