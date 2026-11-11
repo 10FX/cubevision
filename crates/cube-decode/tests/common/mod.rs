@@ -67,3 +67,19 @@ pub fn frame(v: &Value) -> FrameReadings {
 pub fn close(a: f64, b: f64) -> bool {
     a == b || (a - b).abs() <= 1e-9 * a.abs().max(b.abs())
 }
+
+/// The synthetic videos' fixtures: (name, content)
+pub fn video_fixtures() -> Vec<(String, Value)> {
+    let dir = format!("{}/tests/fixtures/videos", env!("CARGO_MANIFEST_DIR"));
+    let mut names: Vec<_> = std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("{dir}: {e}")).map(|e| e.unwrap().file_name().into_string().unwrap()).filter(|n| n.ends_with(".json")).collect();
+    names.sort();
+    names.into_iter().map(|n| (n.trim_end_matches(".json").to_string(), fixture(&format!("videos/{n}")))).collect()
+}
+
+pub fn frames(v: &Value) -> Vec<FrameReadings> {
+    v.as_array().unwrap().iter().map(frame).collect()
+}
+
+pub fn readings(v: &Value) -> Vec<Reading> {
+    v.as_array().unwrap().iter().map(reading).collect()
+}
