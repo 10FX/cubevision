@@ -17,3 +17,7 @@ rayon = "1"
 
 [profile.release]
 debug = 1
+
+# The webcam is measured on Windows (WSL sees no camera)
+[target.'cfg(windows)'.dependencies]
+nokhwa = { version = "=0.10.11", features = ["input-native"] }

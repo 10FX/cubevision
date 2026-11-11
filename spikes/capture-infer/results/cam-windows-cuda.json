@@ -1,0 +1,34 @@
+{
+  "actual": {
+    "format": "MJPEG",
+    "fps": 30,
+    "h": 720,
+    "w": 1280
+  },
+  "camera": "WEBCAM SKILLKORP SKP_W-10",
+  "capture_ms": {
+    "decode_p50": 3.9907,
+    "decode_p95": 6.658200000000001,
+    "wait_p50": 60.0445
+  },
+  "delivered_fps": 15.066666666666666,
+  "delivered_share": 0.5022222222222222,
+  "frame_gap_ms": {
+    "max": 82.0065,
+    "p50": 64.0182,
+    "p95": 80.0332
+  },
+  "frames": 452,
+  "inference": {
+    "found_share": 0.0,
+    "frames_read": 386,
+    "total_p50_ms": 20.211199999999998,
+    "total_p95_ms": 27.0943
+  },
+  "requested": {
+    "fps": 30,
+    "h": 720,
+    "w": 1280
+  },
+  "seconds": 30.0
+}

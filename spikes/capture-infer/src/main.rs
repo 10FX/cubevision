@@ -43,6 +43,26 @@ enum Command {
         #[arg(long, default_value = "ffmpeg")]
         ffmpeg: String,
     },
+    /// What the webcam delivers for some seconds; with --device, the models read it live
+    Cam {
+        #[arg(long, default_value_t = 0)]
+        index: u32,
+        #[arg(long, default_value_t = 1280)]
+        width: u32,
+        #[arg(long, default_value_t = 720)]
+        height: u32,
+        #[arg(long, default_value_t = 30)]
+        fps: u32,
+        #[arg(long, default_value_t = 30.0)]
+        seconds: f64,
+        /// Without a device, the camera alone is measured
+        #[arg(long)]
+        device: Option<Device>,
+        #[arg(long, env = "CUBE_MODELS")]
+        models: Option<PathBuf>,
+        #[arg(long)]
+        precision: Option<Precision>,
+    },
 }
 
 /// Decoding runs in its own thread, a few batches ahead of the models
@@ -110,6 +130,20 @@ fn main() -> Result<()> {
             let loaded = Models::load(&models, device, precision.unwrap_or(default_precision(device)))?;
             println!("{}", serde_json::to_string_pretty(&video(file, loaded, ffmpeg)?)?);
         }
+        #[cfg(windows)]
+        Command::Cam { index, width, height, fps, seconds, device, models, precision } => {
+            let mut loaded = match device {
+                Some(device) => {
+                    let models = models.ok_or_else(|| anyhow::anyhow!("--device needs --models or CUBE_MODELS"))?;
+                    Some(Models::load(&models, device, precision.unwrap_or(default_precision(device)))?)
+                }
+                None => None,
+            };
+            let request = spike::cam::Request { index, width, height, fps, seconds };
+            println!("{}", serde_json::to_string_pretty(&spike::cam::run(&request, loaded.as_mut())?)?);
+        }
+        #[cfg(not(windows))]
+        Command::Cam { .. } => anyhow::bail!("the camera is measured on Windows: WSL sees none"),
     }
     Ok(())
 }
