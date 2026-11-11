@@ -1,0 +1,12 @@
+[package]
+name = "cube-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A 3×3 Rubik's Cube: its stickers, its notation, the 24 ways to hold it, how far a CFOP solve went"
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = "1"
