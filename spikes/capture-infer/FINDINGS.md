@@ -11,12 +11,18 @@ Vidéos : uniquement les synthétiques `synthetic-v3` ; aucune image de la webca
 | P1 Parité | CPU fp32 ≤ 1e-4 et CUDA fp16 ≤ 1e-2 sur toutes les sorties, contre ONNX Runtime 1.31 en Python | `tests/parity.rs`, `tests/reference.json` | réussi |
 | P2 GPU | total p95 par image : CUDA 15,8 ms (WSL), 13,8 ms (Windows), DirectML 12,7 ms ; seuil 33 ms | `results/infer-*.json` | réussi |
 | P3 Vidéo | 1080p60 h264 : 120 i/s, cube trouvé sur 100 % ; 480×854 vp8 : 46 i/s pour 30, 99,2 % | `results/video-mp4.json`, `results/video-webm.json` | réussi |
-| P4 Webcam | 1280×720 MJPEG à 30 i/s annoncés : 15,1 i/s reçus (0,50), autant que ffmpeg DirectShow (15 i/s) ; lecture en direct 20 ms p50, 27 ms p95 | `results/cam-windows.json`, `results/cam-windows-cuda.json` | réussi sous réserve |
+| P4 Webcam | 1280×720 MJPEG à 30 i/s annoncés : 15,1 i/s reçus (0,50), autant que ffmpeg DirectShow (15 i/s) | `results/cam-windows.json`, `results/cam-windows-cuda.json`, `results/cam-windows-ffmpeg-dshow.txt` | échoué selon la règle, limité par la caméra ; non concluant à 30 i/s |
 
-P4 : la SKILLKORP SKP_W-10 descend à 15 i/s dans la lumière de la pièce, à 1280×720 comme à 640×480.
-Rust attend la caméra 60 ms par image et décode en 3,8 ms : il ne perd aucune image par rapport au
-lecteur natif. Les 30 i/s restent à mesurer en bonne lumière (même commande). Le `found_share` à 0 de
-la mesure avec modèles vient de l'absence de cube devant la caméra.
+P4 : la SKILLKORP SKP_W-10 ne livre que 15 i/s, à 1280×720 comme à 640×480, à nokhwa comme à
+ffmpeg DirectShow. Rust attend la caméra 60 ms par image et décode en 3,8 ms : il ne perd aucune image
+par rapport au lecteur natif. Les formats MJPEG de la caméra sont à cadence fixe (5 à 30 i/s, chacun
+annoncé seul). La cause probable, une pose allongée en faible lumière, n'a pas été vérifiée : les
+30 i/s restent à mesurer en bonne lumière (même commande).
+
+Lecture en direct sur CUDA : 20 ms p50, 27 ms p95, mais sans cube devant la caméra (`found_share` 0).
+Ce chiffre ne comprend donc pas la seconde vue zoomée (un passage du détecteur et un letterbox de
+plus) qu'un petit cube déclenche ; avec elle, le p95 approcherait le budget de 33 ms (estimation non
+mesurée). À remesurer avec un cube.
 
 Le CPU seul tient aussi P2 (15,6 ms Windows, 18,0 ms WSL), mais pas les lots : 8,4 ms par image en
 lot de 8, contre 1,1 ms sur CUDA.
@@ -27,6 +33,11 @@ lot de 8, contre 1,1 ms sur CUDA.
   version ; en lot de 8 il coûte 9,4 ms par image (rien gagné), à creuser avant d'en faire un moteur.
 - P4 : `ffmpeg -f dshow` ne fait pas mieux (15 i/s) : la limite est la caméra, pas la capture.
 - P3 : image par image, le 1080p60 plafonnait à 40 i/s ; les lots de 8 l'ont mené à 120 i/s.
+  Ce gain vaut pour un cube trouvé dès la première vue. Sur la webm portrait, où le cube est petit,
+  la première vue le manque sur ~89 % des images : chaque série d'échecs est coupée au premier zoom
+  réussi et refaite, si bien que le détecteur tourne plus de fois en lots (101 lots de 8 pour
+  96 images, contre 189 passages unitaires). Là, les 46 i/s viennent du lecteur en lot et des
+  letterbox parallèles, pas du détecteur. Une vidéo portrait 1080×1920 n'a pas été mesurée.
 
 ## À reprendre dans `cube-infer`
 
@@ -38,8 +49,13 @@ lot de 8, contre 1,1 ms sur CUDA.
 - Une forme d'entrée fixe par session CUDA : changer de taille de lot d'un appel à l'autre coûte
   ~100 ms ; les lots vidéo sont donc toujours complétés à 8.
 - La seconde vue zoomée du site (`detectWithZoom` : cube < 1/4 de l'image, zoom ×4) est
-  indispensable en portrait : 11 % de cubes trouvés sans elle, 99,2 % avec.
+  indispensable en portrait : 11 % de cubes trouvés sans elle (version intermédiaire, mesure non conservée), 99,2 % avec.
 - Mode vidéo par lots de 8 (même résultat qu'image par image, test à l'appui) ; image par image en direct.
+  Pour les petits cubes, prévoir une session détecteur par forme fixe (1 et 8) afin que les vues
+  isolées ne paient pas le changement de forme, et un chemin séquentiel des échecs qui ne refait pas
+  le reste de la série.
+- Chauffer les sessions avant toute mesure : les modes `video` et `cam` du prototype ne le font pas,
+  leurs premiers passages CUDA pèsent sur les moyennes (prudent, mais trompeur sur une vidéo courte).
 
 ## À reprendre dans `cube-capture`
 
@@ -51,6 +67,7 @@ lot de 8, contre 1,1 ms sur CUDA.
 
 ## Verdict
 
-Rust confirmé. Les deux modèles tournent sur le RTX sous WSL et Windows avec les sorties de Python,
-la vidéo va plus vite que le temps réel, et la webcam livre en Rust tout ce qu'elle produit. Seule
-réserve : refaire la mesure webcam en bonne lumière pour voir les 30 i/s.
+Rust confirmé pour l'inférence et la vidéo (P1 à P3). Pour la webcam, Rust reçoit tout ce que la
+caméra produit, autant que ffmpeg ; mais P4 n'est pas tranché à 30 i/s, faute d'une caméra qui les
+livre ici. Avant `cube-capture` : refaire `cam` en bonne lumière, un cube devant la caméra, ce qui
+mesure aussi le coût réel du direct avec le zoom.
