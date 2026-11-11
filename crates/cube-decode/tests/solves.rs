@@ -4,7 +4,7 @@ use common::*;
 use cube_core::{Cube, ORIENTATIONS};
 use cube_decode::TimedMove;
 use cube_decode::present::{cross_down, face_map, leading_rotation, present_solve, replay_of};
-use cube_decode::reconstruct::{Reconstruction, collapse, reconstruct};
+use cube_decode::reconstruct::{collapse, reconstruct};
 use serde_json::Value;
 
 fn strings(v: &Value) -> Vec<String> {
@@ -13,25 +13,6 @@ fn strings(v: &Value) -> Vec<String> {
 
 fn written(v: &Value) -> Vec<Vec<String>> {
     v.as_array().unwrap().iter().map(strings).collect()
-}
-
-fn same_reconstruction(name: &str, got: &Reconstruction, want: &Value) {
-    assert_eq!(got.moves as u64, want["moves"].as_u64().unwrap(), "{name}: moves");
-    assert!(close(got.tps, num(&want["tps"])), "{name}: tps {} against {}", got.tps, want["tps"]);
-    for (field, value) in [("time", got.time), ("pause", got.pause), ("start", got.start)] {
-        assert_eq!(value, num(&want[field]), "{name}: {field}");
-    }
-    assert_eq!(got.solution, want["solution"].as_str().unwrap(), "{name}: solution");
-    let splits = want["splits"].as_array().unwrap();
-    assert_eq!(got.splits.len(), splits.len(), "{name}: splits");
-    for (s, w) in got.splits.iter().zip(splits) {
-        assert_eq!(s.phase.name(), w["phase"].as_str().unwrap(), "{name}");
-        for (field, value) in [("end", s.end), ("duration", s.duration), ("recognition", s.recognition)] {
-            assert_eq!(value, num(&w[field]), "{name} {}: {field}", s.phase.name());
-        }
-        assert_eq!(s.moves as u64, w["moves"].as_u64().unwrap(), "{name} {}: moves", s.phase.name());
-        assert_eq!(s.alg, w["alg"].as_str().unwrap(), "{name} {}: alg", s.phase.name());
-    }
 }
 
 fn timed(v: &Value) -> Vec<TimedMove> {

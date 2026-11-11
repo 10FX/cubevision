@@ -3,6 +3,8 @@
 
 use cube_decode::*;
 use cube_decode::decode::DecodeResult;
+use cube_decode::orientation::OrientationResult;
+use cube_decode::reconstruct::Reconstruction;
 use serde_json::Value;
 
 pub fn fixture(name: &str) -> Value {
@@ -96,4 +98,46 @@ pub fn same_decode(name: &str, got: &DecodeResult, want: &Value) {
     let states: Vec<_> = got.search.path.iter().map(|(s, _)| s.to_vec()).collect();
     let expected: Vec<_> = want["path"].as_array().unwrap().iter().map(|s| state(s).to_vec()).collect();
     assert_eq!(states, expected, "{name}: path");
+}
+
+/// A reconstruction against what reconstruct gave
+pub fn same_reconstruction(name: &str, got: &Reconstruction, want: &Value) {
+    assert_eq!(got.moves as u64, want["moves"].as_u64().unwrap(), "{name}: moves");
+    assert!(close(got.tps, num(&want["tps"])), "{name}: tps {} against {}", got.tps, want["tps"]);
+    for (field, value) in [("time", got.time), ("pause", got.pause), ("start", got.start)] {
+        assert_eq!(value, num(&want[field]), "{name}: {field}");
+    }
+    assert_eq!(got.solution, want["solution"].as_str().unwrap(), "{name}: solution");
+    let splits = want["splits"].as_array().unwrap();
+    assert_eq!(got.splits.len(), splits.len(), "{name}: splits");
+    for (s, w) in got.splits.iter().zip(splits) {
+        assert_eq!(s.phase.name(), w["phase"].as_str().unwrap(), "{name}");
+        for (field, value) in [("end", s.end), ("duration", s.duration), ("recognition", s.recognition)] {
+            assert_eq!(value, num(&w[field]), "{name} {}: {field}", s.phase.name());
+        }
+        assert_eq!(s.moves as u64, w["moves"].as_u64().unwrap(), "{name} {}: moves", s.phase.name());
+        assert_eq!(s.alg, w["alg"].as_str().unwrap(), "{name} {}: alg", s.phase.name());
+    }
+}
+
+/// A view of the cuber against what cuberView gave
+pub fn same_view(name: &str, got: &Option<OrientationResult>, want: &Value) {
+    let Some(got) = got else {
+        assert!(want.is_null(), "{name}: no view, ChronoCube has one");
+        return;
+    };
+    assert!(!want.is_null(), "{name}: a view, ChronoCube has none");
+    let notation: Vec<Vec<String>> =
+        want["notation"].as_array().unwrap().iter().map(|t| t.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect()).collect();
+    assert_eq!(got.notation, notation, "{name}: notation");
+    assert_eq!(got.rotations as u64, want["rotations"].as_u64().unwrap(), "{name}: rotations");
+    match (&got.track, want.get("track")) {
+        (None, None) => {}
+        (Some(track), Some(w)) => {
+            assert_eq!(track.hz, num(&w["hz"]), "{name}: hz");
+            assert_eq!(track.start, num(&w["start"]), "{name}: start");
+            assert_eq!(track.q, w["q"].as_str().unwrap(), "{name}: track");
+        }
+        (got, want) => panic!("{name}: track {got:?} against {want:?}"),
+    }
 }

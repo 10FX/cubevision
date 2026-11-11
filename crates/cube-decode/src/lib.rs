@@ -4,6 +4,7 @@
 pub mod decode;
 pub mod help;
 pub mod orientation;
+pub mod pipeline;
 pub mod present;
 pub mod reading;
 pub mod reconstruct;

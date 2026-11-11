@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use cube_decode::TimedMove;
-use cube_decode::orientation::{HoldSpan, Mat3, OrientationResult, OrientedFrame, cuber_view, hold_spans, snap, unflip};
+use cube_decode::orientation::{HoldSpan, Mat3, OrientedFrame, cuber_view, hold_spans, snap, unflip};
 use serde_json::Value;
 
 fn mat(v: &Value) -> Mat3 {
@@ -16,27 +16,6 @@ fn oriented(v: &Value) -> Vec<OrientedFrame> {
 
 fn moves(v: &Value) -> Vec<TimedMove> {
     v.as_array().unwrap().iter().map(|m| TimedMove { token: m["move"].as_str().unwrap().to_string(), t: num(&m["t"]) }).collect()
-}
-
-fn same_view(name: &str, got: &Option<OrientationResult>, want: &Value) {
-    let Some(got) = got else {
-        assert!(want.is_null(), "{name}: no view, ChronoCube has one");
-        return;
-    };
-    assert!(!want.is_null(), "{name}: a view, ChronoCube has none");
-    let notation: Vec<Vec<String>> =
-        want["notation"].as_array().unwrap().iter().map(|t| t.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect()).collect();
-    assert_eq!(got.notation, notation, "{name}: notation");
-    assert_eq!(got.rotations as u64, want["rotations"].as_u64().unwrap(), "{name}: rotations");
-    match (&got.track, want.get("track")) {
-        (None, None) => {}
-        (Some(track), Some(w)) => {
-            assert_eq!(track.hz, num(&w["hz"]), "{name}: hz");
-            assert_eq!(track.start, num(&w["start"]), "{name}: start");
-            assert_eq!(track.q, w["q"].as_str().unwrap(), "{name}: track");
-        }
-        (got, want) => panic!("{name}: track {got:?} against {want:?}"),
-    }
 }
 
 #[test]
@@ -59,6 +38,27 @@ fn cuber_view_matches_typescript() {
         let hold = c.get("hold").and_then(Value::as_str).unwrap_or("");
         same_view(key, &cuber_view(&oriented(&c["frames"]), &moves(&c["moves"]), hold, None), &c["result"]);
     }
+}
+
+#[test]
+fn cuber_view_matches_typescript_on_the_videos() {
+    let mut views = 0;
+    for (name, video) in video_fixtures() {
+        let result = &video["result"];
+        // The moves as finish gives them: in the hold that scrambled (white on top, green in front)
+        assert_eq!(result["hold"].as_str().unwrap(), "", "{name}");
+        let frames: Vec<OrientedFrame> = video["frames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f.get("orientation").is_some_and(|o| !o.is_null()) && !f["faces"].as_array().unwrap().is_empty())
+            .map(|f| OrientedFrame { t: num(&f["t"]), orientation: mat(&f["orientation"]) })
+            .collect();
+        let got = cuber_view(&frames, &moves(&result["timed"]), "", None);
+        views += got.is_some() as u32;
+        same_view(&name, &got, &result["orientation"]);
+    }
+    assert_eq!(views, 3);
 }
 
 #[test]
