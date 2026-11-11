@@ -25,7 +25,7 @@ enum Command {
         models: PathBuf,
         #[arg(long, default_value = "cuda")]
         device: Device,
-        /// fp16 on a GPU and fp32 on the CPU unless said
+        /// fp16 on CUDA and DirectML, fp32 elsewhere, unless said
         #[arg(long)]
         precision: Option<Precision>,
         #[arg(long, default_value_t = 20.0)]
@@ -115,7 +115,7 @@ fn video(file: PathBuf, mut models: Models, ffmpeg: String) -> Result<serde_json
 }
 
 pub fn default_precision(device: Device) -> Precision {
-    if device == Device::Cpu { Precision::Fp32 } else { Precision::Fp16 }
+    device.default_precision()
 }
 
 fn main() -> Result<()> {

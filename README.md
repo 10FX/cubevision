@@ -122,11 +122,12 @@ The models are trained once and exported to ONNX. The same file runs everywhere 
 | Hardware | Windows | Linux | Tested |
 |---|---|---|---|
 | NVIDIA GPU | CUDA (DirectML also works) | CUDA | yes, RTX 5060 Ti |
-| Intel CPU | OpenVINO or CPU | OpenVINO or CPU | yes, i5-12400F (CPU provider) |
-| Intel GPU | OpenVINO | OpenVINO | not yet |
+| Intel CPU | OpenVINO or CPU | OpenVINO or CPU | yes, i5-12400F (both) |
+| Intel GPU | OpenVINO (DirectML also works) | OpenVINO | DirectML yes (Arc in a Core Ultra 5 125H); OpenVINO being measured |
+| Intel NPU | OpenVINO | OpenVINO | being measured |
 | AMD GPU | DirectML | MIGraphX | no |
 
-GPUs run the fp16 models, the CPU the fp32 ones; it is the same network. A device you ask for by name
+CUDA and DirectML run the fp16 models; the CPU and OpenVINO the fp32 ones (OpenVINO computes in fp16 on a GPU or an NPU by itself). It is the same network. A device you ask for by name
 is the device you get: if it cannot start, the program stops with a message instead of quietly falling
 back to the CPU.
 
@@ -152,7 +153,7 @@ with validation figures and SHA-256 sums. A `cubevision fetch-models` command wi
 
 ## Measured so far
 
-The prototype, on an RTX 5060 Ti and an i5-12400F. Raw numbers in
+The prototype, on a desktop (RTX 5060 Ti, i5-12400F) and a laptop (Core Ultra 5 125H with Arc graphics). Raw numbers in
 [`spikes/capture-infer/results`](spikes/capture-infer/results), the full write-up (in French) in
 [`FINDINGS.md`](spikes/capture-infer/FINDINGS.md).
 
@@ -160,10 +161,12 @@ The prototype, on an RTX 5060 Ti and an i5-12400F. Raw numbers in
 |---|---|
 | Same outputs as Python's ONNX Runtime | CPU fp32 within 1e-4, CUDA fp16 within 1e-2 |
 | Detector + reader, one frame, p95 | CUDA 13.8 ms on Windows, 15.8 ms on WSL; DirectML 12.7 ms; CPU 15.6 ms |
-| Reader in batches of 8, per image | CUDA 1.1 ms, CPU 8.4 ms |
+| Same, on the laptop | DirectML on the Arc 44.3 ms, CPU 100.8 ms |
+| Reader in batches of 8, per image | CUDA 1.1 ms, CPU 8.4 ms; laptop: DirectML 13.8 ms |
 | 1080p 60 fps video, decode to reading | 120 fps (twice real time), cube found on every frame |
 | Portrait 480×854 video at 30 fps | 46 fps, cube found on 99.2 % of frames |
-| Webcam 1280×720 on Windows | every frame the camera sends: 15 fps here, as with ffmpeg; 30 fps still to measure in good light |
+| Webcam 1280×720 on Windows | every frame the camera sends: 15 fps on the desktop (as with ffmpeg), 10.5 on the laptop, both measured at night; 30 fps still to measure in good light |
+| Live reading with a cube, laptop (DirectML) | 49 ms p95 per frame, cube found on 79 % of frames |
 
 ## Running the prototype
 
@@ -171,8 +174,9 @@ The prototype in [`spikes/capture-infer`](spikes/capture-infer) is a measuring t
 does not show moves yet. Its program is called `spike`.
 
 On Windows, the ready-made zip of the [latest release](https://github.com/10FX/cubevision/releases/latest)
-is the quickest way: `spike.exe`, ONNX Runtime 1.24.4 with DirectML (Intel, AMD and NVIDIA GPUs), the
-models, and `test.bat`, which runs the commands below and writes `results.txt`. Its `README.txt` shows
+is the quickest way: `spike.exe`, ONNX Runtime with DirectML (Intel, AMD and NVIDIA GPUs) and with OpenVINO
+(Intel GPUs, NPUs and processors), the models, and `test.bat`, which runs the commands below and writes
+`results.txt`. Its `README.txt` shows
 how to run them by hand. The rest of this section builds from source.
 
 ### Requirements
@@ -201,19 +205,20 @@ WSL2 does not see the webcam, so the `cam` command is Windows only.
 
 ```powershell
 cd spikes\capture-infer
-.\setup-ort.ps1                      # ONNX Runtime 1.31.1 (CUDA) into ort\venv, 1.24.4 (DirectML) into ort\dml
-. .\ort\cuda.ps1                     # or . .\ort\dml.ps1 for DirectML
+.\setup-ort.ps1                      # ONNX Runtime for CUDA, DirectML and OpenVINO into ort\
+. .\ort\cuda.ps1                     # or ort\dml.ps1 for DirectML, ort\ov.ps1 for OpenVINO
 $env:CUBE_MODELS = 'C:\path\to\cubevision-models-v7'
 cargo build --release
 ```
 
-DirectML needs its own ONNX Runtime (1.24.4, its last release): load `ort\dml.ps1` before using
-`--device directml`, and `ort\cuda.ps1` for `cuda` and `cpu`.
+Each engine has its own ONNX Runtime: 1.31.1 for CUDA (`ort\cuda.ps1`, also for `cpu`), 1.24.4 for DirectML,
+its last release (`ort\dml.ps1`), and 1.24.1 with OpenVINO 2025.4.1 (`ort\ov.ps1`). Load the one that matches
+`--device` in the same PowerShell window.
 
 ### Commands
 
-`--device` is `cuda`, `directml` or `cpu`. `--precision` is `fp16` or `fp32`, by default fp16 on a GPU
-and fp32 on the CPU.
+`--device` is `cuda`, `directml`, `openvino-gpu`, `openvino-npu`, `openvino-cpu` or `cpu`. `--precision` is
+`fp16` or `fp32`, by default fp16 for CUDA and DirectML and fp32 elsewhere.
 
 **Model speed** on a fixed image:
 
@@ -261,10 +266,11 @@ cargo test                           # needs . ort/env, CUBE_MODELS and ffmpeg
   `tools/make_reference.py` with ONNX Runtime in Python.
 - Video: test clips are made by ffmpeg on the fly (rotation, truncated file, missing ffmpeg).
 
-Three tests are ignored by default; run one with `cargo test -- --ignored <name>`:
+Four tests are ignored by default; run one with `cargo test -- --ignored <name>`:
 
 - `cuda_fp16_is_close_to_python` needs CUDA.
 - `cuda_refused_without_cuda` needs an ONNX Runtime without CUDA, to check the refusal.
+- `openvino_cpu_matches_python` needs the OpenVINO runtime (`ort\ov.ps1`).
 - `a_batch_finds_what_frame_by_frame_finds` needs `CUBE_TEST_VIDEO`, a video of a cube being solved.
 
 ## Repository layout

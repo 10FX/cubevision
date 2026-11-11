@@ -27,6 +27,20 @@ mesurée). À remesurer avec un cube.
 Le CPU seul tient aussi P2 (15,6 ms Windows, 18,0 ms WSL), mais pas les lots : 8,4 ms par image en
 lot de 8, contre 1,1 ms sur CUDA.
 
+## Seconde machine : portable Intel
+
+Intel Core Ultra 5 125H, Intel Arc intégré, 15,5 Go, Windows 11, avec le zip de la release `v0.1.0-prototype`
+(`results/laptop-*.json`).
+
+- DirectML sur l'Arc : total p95 44,3 ms (détecteur 13,1, lecteur 32,1), au-dessus des 33 ms de P2. En lot de 8,
+  le lecteur passe à 13,8 ms par image : le mode vidéo y tient, le direct image par image non.
+- CPU : 100,8 ms p95.
+- Webcam intégrée « FHD Camera », 1280×720 MJPEG à 30 i/s annoncés : 10,5 i/s reçus, une image toutes les 96 ms,
+  très régulières (pose longue probable, mesure vers 2 h du matin, lumière non vérifiée).
+- Direct avec un cube et la seconde vue : 45,7 ms p50, 49,1 ms p95, cube trouvé sur 79 % des images, aucune
+  image reçue perdue. Le portable suivrait ~20 i/s.
+- À essayer : OpenVINO (`--device openvino-gpu`, `openvino-npu`), le moteur prévu pour Intel par la spec.
+
 ## Replis essayés
 
 - P2 : DirectML sous Windows marche (12,7 ms p95) mais seulement sur ONNX Runtime 1.24.4, sa dernière
@@ -56,6 +70,11 @@ lot de 8, contre 1,1 ms sur CUDA.
   le reste de la série.
 - Chauffer les sessions avant toute mesure : les modes `video` et `cam` du prototype ne le font pas,
   leurs premiers passages CUDA pèsent sur les moyennes (prudent, mais trompeur sur une vidéo courte).
+- OpenVINO (`--device openvino-cpu|gpu|npu`) : ONNX Runtime 1.24.1, avec OpenVINO 2025.4.1 à installer à part
+  sous Windows (`ort\ov`). `openvino-cpu` donne les sorties de Python à 1e-3 près, 16,0 ms p95 sur l'i5-12400F
+  (15,6 ms pour le moteur CPU). Sur la carte NVIDIA, que son plugin GPU voit par OpenCL, le lecteur fp16 ne
+  compile pas (conversion fp16 sans noyau) : OpenVINO part donc des modèles fp32 et calcule lui-même en fp16 sur
+  GPU et NPU. Pas encore mesuré sur un vrai GPU Intel ni sur un NPU.
 
 ## À reprendre dans `cube-capture`
 

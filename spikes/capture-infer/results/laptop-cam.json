@@ -1,0 +1,36 @@
+{
+  "machine": {
+    "cpu": "Intel Core Ultra 5 125H",
+    "gpu": "Intel Arc Graphics (integrated)",
+    "ram_gb": 15.5,
+    "os": "Windows 11",
+    "camera_note": "laptop's built-in camera, measured around 2 a.m., room light not checked"
+  },
+  "actual": {
+    "format": "MJPEG",
+    "fps": 30,
+    "h": 720,
+    "w": 1280
+  },
+  "camera": "FHD Camera",
+  "capture_ms": {
+    "decode_p50": 7.7121,
+    "decode_p95": 13.3181,
+    "wait_p50": 88.0274
+  },
+  "delivered_fps": 10.733333333333333,
+  "delivered_share": 0.35777777777777775,
+  "frame_gap_ms": {
+    "max": 112.22200000000001,
+    "p50": 95.9863,
+    "p95": 96.4623
+  },
+  "frames": 322,
+  "inference": null,
+  "requested": {
+    "fps": 30,
+    "h": 720,
+    "w": 1280
+  },
+  "seconds": 30.0
+}

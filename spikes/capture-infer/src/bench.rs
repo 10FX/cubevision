@@ -9,11 +9,7 @@ use crate::models::{Device, Models, Precision};
 use crate::stats::percentile;
 
 pub fn device_name(device: Device) -> &'static str {
-    match device {
-        Device::Cpu => "cpu",
-        Device::Cuda => "cuda",
-        Device::DirectMl => "directml",
-    }
+    device.name()
 }
 
 pub fn precision_name(precision: Precision) -> &'static str {

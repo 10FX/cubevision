@@ -15,16 +15,39 @@ pub enum Device {
     Cpu,
     Cuda,
     DirectMl,
+    /// Intel's OpenVINO on the processor, the integrated or discrete GPU, or the NPU
+    OpenVinoCpu,
+    OpenVinoGpu,
+    OpenVinoNpu,
+}
+
+const DEVICES: [(Device, &str); 6] = [
+    (Device::Cpu, "cpu"),
+    (Device::Cuda, "cuda"),
+    (Device::DirectMl, "directml"),
+    (Device::OpenVinoCpu, "openvino-cpu"),
+    (Device::OpenVinoGpu, "openvino-gpu"),
+    (Device::OpenVinoNpu, "openvino-npu"),
+];
+
+impl Device {
+    pub fn name(self) -> &'static str {
+        DEVICES.iter().find(|(d, _)| *d == self).map(|(_, n)| *n).unwrap()
+    }
+
+    /// fp16 models for CUDA and DirectML; fp32 elsewhere: OpenVINO runs a GPU or an NPU in fp16 by itself from
+    /// the fp32 model (its GPU plugin does not compile every fp16 conversion of the reader)
+    pub fn default_precision(self) -> Precision {
+        if matches!(self, Device::Cuda | Device::DirectMl) { Precision::Fp16 } else { Precision::Fp32 }
+    }
 }
 
 impl FromStr for Device {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self> {
-        match s {
-            "cpu" => Ok(Device::Cpu),
-            "cuda" => Ok(Device::Cuda),
-            "directml" => Ok(Device::DirectMl),
-            other => bail!("unknown device {other:?}: cpu, cuda or directml"),
+        match DEVICES.iter().find(|(_, n)| *n == s) {
+            Some((device, _)) => Ok(*device),
+            None => bail!("unknown device {s:?}: {}", DEVICES.map(|(_, n)| n).join(", ")),
         }
     }
 }
@@ -88,6 +111,15 @@ fn provider(device: Device) -> Option<ExecutionProviderDispatch> {
         Device::Cpu => None,
         Device::Cuda => Some(ep::CUDA::default().build().error_on_failure()),
         Device::DirectMl => Some(ep::DirectML::default().build().error_on_failure()),
+        Device::OpenVinoCpu | Device::OpenVinoGpu | Device::OpenVinoNpu => {
+            let target = device.name().trim_start_matches("openvino-").to_uppercase();
+            // Compiled models are kept: a GPU or an NPU takes seconds to compile them at each start otherwise
+            let cache = std::env::temp_dir().join("cubevision-openvino");
+            let openvino = ep::OpenVINO::default().with_device_type(target).with_cache_dir(cache.display());
+            // An NPU runs fixed shapes only: compiled again for each batch size met
+            let openvino = if device == Device::OpenVinoNpu { openvino.with_dynamic_shapes(false) } else { openvino };
+            Some(openvino.build().error_on_failure())
+        }
     }
 }
 
@@ -151,5 +183,28 @@ impl Models {
                 orientation: orientation[i].clone(),
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_device_is_named_as_it_is_asked_for() {
+        for name in ["cpu", "cuda", "directml", "openvino-cpu", "openvino-gpu", "openvino-npu"] {
+            assert_eq!(name.parse::<Device>().unwrap().name(), name);
+        }
+        assert!("openvino".parse::<Device>().is_err(), "OpenVINO needs its device: cpu, gpu or npu");
+    }
+
+    #[test]
+    fn fp16_models_only_where_onnx_runtime_runs_them_as_given() {
+        for device in [Device::Cpu, Device::OpenVinoCpu, Device::OpenVinoGpu, Device::OpenVinoNpu] {
+            assert_eq!(device.default_precision(), Precision::Fp32);
+        }
+        for device in [Device::Cuda, Device::DirectMl] {
+            assert_eq!(device.default_precision(), Precision::Fp16);
+        }
     }
 }

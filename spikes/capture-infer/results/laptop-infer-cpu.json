@@ -1,0 +1,23 @@
+{
+  "machine": {
+    "cpu": "Intel Core Ultra 5 125H",
+    "gpu": "Intel Arc Graphics (integrated)",
+    "ram_gb": 15.5,
+    "os": "Windows 11",
+    "camera_note": "laptop's built-in camera, measured around 2 a.m., room light not checked"
+  },
+  "detector_batch8_ms_per_image": 17.2944875,
+  "detector_ms": {
+    "p50": 29.2512,
+    "p95": 40.8151
+  },
+  "device": "cpu",
+  "frames": 240,
+  "precision": "fp32",
+  "reader_batch8_ms_per_image": 28.0641875,
+  "reader_ms": {
+    "p50": 53.233999999999995,
+    "p95": 65.5049
+  },
+  "total_p95_ms": 100.76240000000001
+}

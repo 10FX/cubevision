@@ -57,6 +57,12 @@ fn cuda_fp16_is_close_to_python() {
 }
 
 #[test]
+#[ignore = "needs ONNX Runtime for OpenVINO"]
+fn openvino_cpu_matches_python() {
+    check(Device::OpenVinoCpu, Precision::Fp32, 1e-3);
+}
+
+#[test]
 #[ignore = "needs a CPU-only runtime"]
 fn cuda_refused_without_cuda() {
     let error = Models::load(&models_dir(), Device::Cuda, Precision::Fp16).err().expect("CUDA must be refused, not replaced by the CPU");
