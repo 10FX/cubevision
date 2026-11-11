@@ -11,4 +11,4 @@ cube-core = { path = "../cube-core" }
 rayon = "1"
 
 [dev-dependencies]
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }

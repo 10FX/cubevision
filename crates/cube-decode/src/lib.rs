@@ -3,6 +3,7 @@
 
 pub mod decode;
 pub mod help;
+pub mod orientation;
 pub mod present;
 pub mod reading;
 pub mod reconstruct;
