@@ -301,6 +301,7 @@ name = "cube-infer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cube-capture",
  "cube-decode",
  "ort",
  "rayon",

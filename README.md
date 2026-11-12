@@ -8,10 +8,11 @@ rewritten in Rust so that it runs faster on a PC, with the GPU you have (NVIDIA,
 CPU alone. It is a technical showcase: clone it, build it, and see what it does and how. For everyday
 use (timer, reconstructions, community), use ChronoCube.
 
-> **Status: early.** Two steps exist today: a prototype that proves Rust can carry the models, the video
-> and the webcam, and the two crates that turn readings into moves (`cube-core`, `cube-decode`), which
-> give ChronoCube's results to the last move. The two apps (live mode and video mode with the 3D cube)
-> are being written; the [roadmap](#roadmap) says what comes in which order.
+> **Status: early.** Three steps exist today: a prototype that proves Rust can carry the models, the video
+> and the webcam; the two crates that turn readings into moves (`cube-core`, `cube-decode`), which give
+> ChronoCube's results to the last move; and the two that turn a video or a camera into readings
+> (`cube-capture`, `cube-infer`). The two apps (live mode and video mode with the 3D cube) are being
+> written; the [roadmap](#roadmap) says what comes in which order.
 >
 > **Try it on Windows in two minutes:** download `cubevision-prototype-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
@@ -26,6 +27,7 @@ use (timer, reconstructions, community), use ChronoCube.
 - [Measured so far](#measured-so-far)
 - [Running the prototype](#running-the-prototype)
 - [The decoder, checked against ChronoCube](#the-decoder-checked-against-chronocube)
+- [From a frame to readings](#from-a-frame-to-readings)
 - [Repository layout](#repository-layout)
 - [Roadmap](#roadmap)
 - [Licence](#licence)
@@ -278,7 +280,7 @@ Four tests are ignored by default; run one with `cargo test -- --ignored <name>`
 ## The decoder, checked against ChronoCube
 
 `cube-core` and `cube-decode` are ChronoCube's TypeScript rewritten in Rust, and must give the same
-results on what a model can read: same moves, same times, same scores (compared to 1e-9, on Linux).
+results on what a model can read: same moves, same times, same scores (compared to 1e-9, on Linux and on Windows).
 They need neither ONNX, nor a camera, nor a GPU:
 
 ```sh
@@ -320,11 +322,62 @@ probabilities a model gives:
   passes side by side: same result, several times faster.
 - Sorts are total: Rust's panic on an order that is not.
 
+## From a frame to readings
+
+`cube-capture` hands over frames, `cube-infer` finds the cube in each and reads its faces:
+
+| Crate, module | Job |
+|---|---|
+| `cube-capture::video` | a video file's frames through ffmpeg: RGBA, upright, at most 1280 wide as ChronoCube reads them, each with the time it is shown |
+| `cube-capture::camera` | the camera in a thread of its own, its latest frame only: a reader slower than the camera skips frames, it never falls behind |
+| `cube-infer::geometry` | the frame into the detector's square (letterbox) and the cube's box into the reader's square |
+| `cube-infer::follow` | the cube's box from frame to frame: a second, closer look at a small cube, the box smoothed and kept when a hand hides the cube |
+| `cube-infer::output` | the reader's outputs into the readings the decoder takes |
+| `cube-infer::models`, `device` | the two models on ONNX Runtime, on the device asked for or the first that runs them |
+
+The parts ported from ChronoCube (geometry, following, outputs) are compared with its TypeScript on
+fixtures, like the decoder: tensors and crops to the bit, boxes to 1e-9. They run with
+`cargo test --workspace`, which needs ffmpeg 5.1 or later in the PATH and nothing else.
+
+The tests that run the models are skipped unless asked for. They need the released models and an
+ONNX Runtime library (the [prototype's requirements](#requirements) install one):
+
+```sh
+export CUBE_MODELS=<folder of cubevision-models-v7>
+export ORT_DYLIB_PATH=<libonnxruntime.so or onnxruntime.dll>
+cargo test --release -p cube-infer --test models -- --include-ignored --test-threads=1
+cargo test --release -p cube-capture --test camera -- --include-ignored    # with a camera plugged in
+```
+
+They check the outputs against ONNX Runtime in Python (CPU within 1e-4, CUDA within 1e-2), that a
+batch reads as its images one by one, and that a device asked for by name is that one or an error.
+
+An example reads a whole video, in batches of 8 as the video mode will:
+
+```sh
+cargo run --release -p cube-infer --example read_video -- solve.mp4 --device cuda
+```
+
+On a synthetic 1280×720 solve of 392 frames (i5-12400F, RTX 5060 Ti, WSL2, decoding included):
+
+| Device | Frames a second | Cube found | Frames read |
+|---|---|---|---|
+| CUDA | 109 (3.6 times the video's rate) | 99.2 % | 268 |
+| CPU | 24 (0.8 times) | 99.2 % | 271 |
+
+ChronoCube reads 275 frames of the same video with the same models; it also reads frames the reader
+calls mid-turn when the crop did not move, which the example leaves out and the video mode will not.
+
+Not verified yet: the camera on Linux (written, but tried on no real camera: WSL has none), DirectML
+and OpenVINO with these crates (the prototype measured them), and any AMD hardware.
+
 ## Repository layout
 
 ```
 crates/cube-core/         cube state, notation, holds, CFOP steps
 crates/cube-decode/       from readings to moves (see the table below)
+crates/cube-infer/        the two models, the hardware, the cube's box and crops
+crates/cube-capture/      frames from a video file or a camera
 docs/superpowers/specs/   the design (in French): modes, architecture, models, tests
 docs/superpowers/plans/   the plan of each step
 spikes/capture-infer/     the prototype: models, video and webcam from Rust, with its results
@@ -355,13 +408,13 @@ The apps are a Rust workspace, one crate per job, each knowing nothing of the on
 | `cube-view` | the 3D cube and the window |
 | `cubevision` | the program and its commands |
 
-The first two exist; the others are to come.
+The first four exist; the window and the program are to come.
 
 ## Roadmap
 
 1. ~~Prototype: models, video and webcam from Rust, measured.~~ Done; webcam at 30 fps still to confirm.
 2. ~~`cube-core`, then `cube-decode`, checked against ChronoCube's results.~~ Done.
-3. `cube-infer` and `cube-capture`.
+3. ~~`cube-infer` and `cube-capture`.~~ Done; the camera on Linux still to try on a real one.
 4. Video mode in JSON, compared with the web app on the same synthetic videos.
 5. `cube-view`: 3D cube, live mode, replay.
 6. `training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.
