@@ -92,8 +92,11 @@ fn scenarios() -> Vec<Scenario> {
         .collect()
 }
 
+/// A look asked of the detector: the frame's index and the region looked at
+type Asked = (usize, Option<BoxF>);
+
 /// The scenario played: the reader's square in each frame, and the looks the detector was asked
-fn play(s: &Scenario, batch: bool) -> (Vec<Option<BoxF>>, Vec<(usize, Option<BoxF>)>) {
+fn play(s: &Scenario, batch: bool) -> (Vec<Option<BoxF>>, Vec<Asked>) {
     let data: Vec<[u8; 4]> = (0..s.answers.len()).map(|i| [i as u8, 0, 0, 255]).collect();
     let frames: Vec<Frame> = data.iter().map(|d| Frame { data: d, width: s.width, height: s.height }).collect();
     let mut follower = CubeFollower::new(Scripted { answers: s.answers.clone(), looks: Vec::new() }, s.every);

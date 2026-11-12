@@ -3,6 +3,7 @@
 
 pub mod follow;
 pub mod geometry;
+pub mod output;
 
 pub use cube_decode::motion::Frame;
 pub use geometry::{BoxF, FrameError, Letterbox};
