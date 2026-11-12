@@ -2,6 +2,7 @@
 name = "cube-infer"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Where a Rubik's Cube is in a frame and what its faces show: the two ONNX models, on the device asked for"

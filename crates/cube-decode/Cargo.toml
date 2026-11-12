@@ -2,6 +2,7 @@
 name = "cube-decode"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "From what a reader saw of a Rubik's Cube, frame after frame, to the moves turned"
