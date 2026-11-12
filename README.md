@@ -8,21 +8,22 @@ rewritten in Rust so that it runs faster on a PC, with the GPU you have (NVIDIA,
 CPU alone. It is a technical showcase: clone it, build it, and see what it does and how. For everyday
 use (timer, reconstructions, community), use ChronoCube.
 
-> **Status: early.** Three steps exist today: a prototype that proves Rust can carry the models, the video
-> and the webcam; the two crates that turn readings into moves (`cube-core`, `cube-decode`), which give
-> ChronoCube's results to the last move; and the two that turn a video or a camera into readings
-> (`cube-capture`, `cube-infer`). The two apps (live mode and video mode with the 3D cube) are being
-> written; the [roadmap](#roadmap) says what comes in which order.
+> **Status: early, and it runs.** The two modes exist: `cubevision live` writes the moves you make in
+> front of the camera on a 3D cube, and `cubevision video` finds the moves of a filmed solve and plays
+> them back. Underneath, five crates rewrite ChronoCube's vision in Rust and are checked against it.
+> Still to come: the video's picture and the cube's measured orientation in the replay, the training
+> code, benchmarks and CI; the [roadmap](#roadmap) says what comes in which order.
 >
-> **Try it on Windows in two minutes:** download `cubevision-prototype-windows-x64.zip` from the
+> **Try it on Windows in two minutes:** download `cubevision-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
-> `test.bat`. It measures the models on your GPU (any brand) and CPU, and your webcam, and writes
-> `results.txt`. Nothing to install.
+> `live.bat`. Hold a solved cube in front of the camera, white on top, green facing it, and turn it.
+> Nothing to install; no image is saved.
 
 ## Contents
 
-- [What it will do](#what-it-will-do)
+- [What it does](#what-it-does)
 - [How it works](#how-it-works)
+- [Running it](#running-it)
 - [Models](#models)
 - [Measured so far](#measured-so-far)
 - [Running the prototype](#running-the-prototype)
@@ -32,7 +33,7 @@ use (timer, reconstructions, community), use ChronoCube.
 - [Roadmap](#roadmap)
 - [Licence](#licence)
 
-## What it will do
+## What it does
 
 Two independent modes.
 
@@ -42,9 +43,10 @@ tracker is sure of it, and a written move never changes afterwards. A 3D cube pl
 are named by the colour of their centre, so you can hold and rotate the cube any way you like.
 
 **Video: `cubevision video solve.mp4 --scramble "R U R' …"`.** Give a video of a solve and its scramble.
-cubevision returns every move of the solve, played on a 3D cube that follows the cube's orientation in
-the video, with a playback bar that keeps the cube, the video and the move list in step. It also gives
-the rotations, wide moves and slices, the CFOP steps and their times, and the turns per second. If the
+cubevision returns every move of the solve, played on a 3D cube, with a playback bar that keeps the cube
+and the move list in step (by move, at a quarter, half or full speed). It also gives the rotations, wide
+moves and slices, the CFOP steps and their times, and the turns per second. Not there yet: the video's
+picture next to the cube, and the cube following the orientation measured in the video. If the
 scramble was done with other colours on top and in front, say so with `--top` and `--front`. With
 `--json` you get the same result without a window.
 
@@ -134,6 +136,49 @@ The models are trained once and exported to ONNX. The same file runs everywhere 
 CUDA and DirectML run the fp16 models; the CPU and OpenVINO the fp32 ones (OpenVINO computes in fp16 on a GPU or an NPU by itself). It is the same network. A device you ask for by name
 is the device you get: if it cannot start, the program stops with a message instead of quietly falling
 back to the CPU.
+
+## Running it
+
+On Windows the release's zip holds everything: `live.bat` (the models on any GPU with DirectML),
+`live-openvino.bat` (an Intel GPU with OpenVINO), `live-cpu.bat`, and a `README.txt`.
+
+From the sources, with Rust 1.92 or later, the released models and an ONNX Runtime library
+(the [prototype's requirements](#requirements) install one):
+
+```sh
+export CUBE_MODELS=<folder of cubevision-models-v7>
+export ORT_DYLIB_PATH=<libonnxruntime.so or onnxruntime.dll>
+cargo run --release -p cubevision -- live                      # the camera; R starts again
+cargo run --release -p cubevision -- video solve.mp4 --scramble "R U R' U'"
+cargo run --release -p cubevision -- video solve.mp4 --scramble "…" --json
+```
+
+`--device cpu|cuda|directml|openvino-cpu|openvino-gpu|openvino-npu` chooses where the models run; without
+it the first that works is taken, and the window says which. The video mode needs ffmpeg 5.1 or later in
+the PATH. Its exit code is 0 for a solve followed to a solved cube, 2 when it could not be, 1 for an error.
+
+**Live.** The camera's picture is shown as in a mirror, with a frame around the cube: green when faces
+are read, yellow when the cube is only seen. Moves seen but not settled yet are written in grey; ten
+frames later they turn white and never change. If the 3D cube no longer matches yours, solve your cube
+and press R. A slice is written as two face turns (M as R L'), a wide move as the opposite face's turn:
+faces are named by their centre, which a slice moves. WSL has no camera: under Linux the camera path is
+written but was tried on no real one.
+
+**Video, against ChronoCube.** The four synthetic solves of the decoder's fixtures, read by the same
+models (`cargo test -p cubevision --test site -- --include-ignored`, on an i5-12400F and an RTX 5060 Ti):
+
+| Video | Read as the site reads (processor, frame by frame) | In batches on CUDA |
+|---|---|---|
+| synth-23-000 | 358 of 391 frames with the site's faces; solved as the site, same solution | solved; read in 3.4 s |
+| synth-23-005 | 328 of 392; solved as the site, one move more | solved; 3.5 s |
+| synth-23-006 | 384 of 384: identical; not solved, as the site, same solution | not solved; 1.9 s |
+| synth-23-022 | 403 of 403: identical; solved as the site, same solution | solved; 1.9 s |
+
+Where the frames differ, the first ones are still the site's to seven digits; then the detector's box
+lands a few pixels away (the native engine against WebAssembly, by all appearances) and the box followed
+carries the difference on. Decoding takes 1.3 to 3.2 s more. A scramble that is not the video's is told
+apart from a solve merely hard to follow: it explains under 35 % of the stickers read (0.27 to 0.31 on
+these videos, against 0.41 to 0.50 for the right scramble on the unsolved one).
 
 ## Models
 
@@ -379,6 +424,8 @@ crates/cube-core/         cube state, notation, holds, CFOP steps
 crates/cube-decode/       from readings to moves (see the table below)
 crates/cube-infer/        the two models, the hardware, the cube's box and crops
 crates/cube-capture/      frames from a video file or a camera
+crates/cube-view/         the cube drawn in 3D and played move by move, for an egui window
+crates/cubevision/        the program: live mode, video mode, their windows
 docs/superpowers/specs/   the design (in French): modes, architecture, models, tests
 docs/superpowers/plans/   the plan of each step
 spikes/capture-infer/     the prototype: models, video and webcam from Rust, with its results
@@ -409,15 +456,16 @@ The apps are a Rust workspace, one crate per job, each knowing nothing of the on
 | `cube-view` | the 3D cube and the window |
 | `cubevision` | the program and its commands |
 
-The first four exist; the window and the program are to come.
+All six exist.
 
 ## Roadmap
 
 1. ~~Prototype: models, video and webcam from Rust, measured.~~ Done; webcam at 30 fps still to confirm.
 2. ~~`cube-core`, then `cube-decode`, checked against ChronoCube's results.~~ Done.
 3. ~~`cube-infer` and `cube-capture`.~~ Done; the camera on Linux still to try on a real one.
-4. Video mode in JSON, compared with the web app on the same synthetic videos.
-5. `cube-view`: 3D cube, live mode, replay.
+4. ~~Video mode in JSON, compared with the web app on the same synthetic videos.~~ Done.
+5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done, but for the video's picture and the measured
+   orientation in the replay; wide moves and slices jump instead of turning.
 6. `training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.
 7. A larger reader for the PC, trained on renders only.
 
