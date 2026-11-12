@@ -75,6 +75,18 @@ fn missing_models_point_to_fetch_models() {
 }
 
 #[test]
+fn half_the_weights_missing_is_not_a_reason_to_read_slower() {
+    // Without --device: the fp16 files a GPU takes are missing. Not "no GPU here, the processor then"
+    let dir = scratch("half");
+    std::fs::write(dir.join("cube-detector.json"), DETECTOR).unwrap();
+    std::fs::write(dir.join("cube-reader.json"), READER).unwrap();
+    std::fs::write(dir.join("cube-detector.fp32.onnx"), "").unwrap();
+    std::fs::write(dir.join("cube-reader.fp32.onnx"), "").unwrap();
+    let error = format!("{:#}", Models::load(&dir, None).err().expect("half the models"));
+    assert!(error.contains("fp16.onnx") && error.contains("cubevision fetch-models"), "{error}");
+}
+
+#[test]
 fn a_description_that_is_not_one_is_explained() {
     let dir = scratch("broken");
     std::fs::write(dir.join("cube-detector.json"), "{").unwrap();

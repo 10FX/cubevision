@@ -365,8 +365,9 @@ On a synthetic 1280×720 solve of 392 frames (i5-12400F, RTX 5060 Ti, WSL2, deco
 | CUDA | 109 (3.6 times the video's rate) | 99.2 % | 268 |
 | CPU | 24 (0.8 times) | 99.2 % | 271 |
 
-ChronoCube reads 275 frames of the same video with the same models; it also reads frames the reader
-calls mid-turn when the crop did not move, which the example leaves out and the video mode will not.
+ChronoCube reads 275 frames of the same video with the same models. The likely reason for the gap: it
+also reads frames the reader calls mid-turn when the crop did not move, which the example leaves out.
+The two are compared frame by frame in the next step, with the video mode.
 
 Not verified yet: the camera on Linux (written, but tried on no real camera: WSL has none), DirectML
 and OpenVINO with these crates (the prototype measured them), and any AMD hardware.

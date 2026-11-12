@@ -157,7 +157,12 @@ fn environment() -> Result<&'static Environment> {
     }
     let path = library()?;
     let env = ort::init_from(&path)
-        .map_err(|e| anyhow!("cannot load ONNX Runtime from {}: {e}", path.display()))?
+        .map_err(|e| {
+            anyhow!(
+                "cannot load ONNX Runtime from {} (ORT_DYLIB_PATH names its library, or it sits next to the executable): {e}",
+                path.display()
+            )
+        })?
         .with_name("cubevision")
         .build()
         .map_err(|e| anyhow!("{e}"))?;
@@ -375,11 +380,12 @@ pub struct Models {
     pub fallback: Option<String>,
 }
 
-/// The first line of an error, short enough to show
+/// An error short enough to show: its end, where the cause is (the start of ONNX Runtime's is where in its
+/// sources it happened)
 fn brief(error: &anyhow::Error) -> String {
-    let text = format!("{error:#}");
-    let line = text.lines().next().unwrap_or_default();
-    line.chars().take(200).collect()
+    let text = format!("{error:#}").split_whitespace().collect::<Vec<_>>().join(" ");
+    let skip = text.chars().count().saturating_sub(200);
+    if skip == 0 { text } else { format!("…{}", text.chars().skip(skip).collect::<String>()) }
 }
 
 impl Models {
@@ -412,10 +418,18 @@ impl Models {
             Ok(models)
         };
         if let Some(device) = device {
+            // What no other device would mend is said as it is: weights missing, ONNX Runtime not found
             weights(device.precision())?;
-            return on(device)
-                .with_context(|| format!("{} cannot run the models here (another device: --device {})", device.name(), Device::names()));
+            environment()?;
+            return on(device).with_context(|| match device {
+                Device::Cpu => {
+                    "the processor cannot run the models: are their files whole? (`cubevision fetch-models` gets them again)".to_string()
+                }
+                _ => format!("{} cannot run the models here (another device: --device {})", device.name(), Device::names()),
+            });
         }
+        // Both precisions: a GPU's weights missing must not look like a machine without a GPU
+        weights(Precision::Fp16)?;
         weights(Precision::Fp32)?;
         environment()?;
         let mut failures = Vec::new();
@@ -445,5 +459,21 @@ impl Models {
         let size = self.reader.size;
         self.reader.run(&vec![0.0; n * 3 * size * size], n)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_error_is_shown_by_its_end() {
+        assert_eq!(brief(&anyhow!("short\n  and  plain")), "short and plain");
+        let long = anyhow!("{} libcublasLt.so.13: cannot open shared object file", "/onnxruntime/core/providers/x.cc:42 ".repeat(20));
+        let shown = brief(&long);
+        assert!(
+            shown.starts_with('…') && shown.ends_with("libcublasLt.so.13: cannot open shared object file") && shown.chars().count() == 201,
+            "{shown}"
+        );
     }
 }

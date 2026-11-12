@@ -149,7 +149,11 @@ impl VideoReader {
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).split(b'\n').map_while(|line| line.ok()) {
                 let line = String::from_utf8_lossy(&line);
-                if let Some((_, after)) = line.split_once("pts_time:") {
+                // showinfo's own lines only ("[Parsed_showinfo_1 @ …] n: 0 pts: 0 pts_time:0 …"): a tag of the file
+                // may hold the same words
+                if let Some((_, after)) =
+                    line.split_once("pts_time:").filter(|(before, _)| before.contains("Parsed_showinfo") && before.contains(" n:"))
+                {
                     // A frame without a time of its own still takes its place in the order
                     let _ = send.send(after.split_whitespace().next().and_then(|t| t.parse::<f64>().ok()).unwrap_or(f64::NAN));
                 } else if line.contains("[error]") || line.contains("[fatal]") {

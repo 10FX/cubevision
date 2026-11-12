@@ -166,3 +166,23 @@ fn a_reader_dropped_early_stops_ffmpeg() {
     assert!(reader.next_image().unwrap().is_some());
     drop(reader); // must not hang on ffmpeg's full pipe
 }
+
+#[test]
+fn a_title_that_looks_like_a_frame_time_is_not_one() {
+    // ffmpeg prints the file's tags on the stream the frame times come by
+    let path = scratch("titled.mp4");
+    ffmpeg(&[
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=160x120:rate=30:duration=1",
+        "-pix_fmt",
+        "yuv420p",
+        "-metadata",
+        "title=pts_time:99 hello",
+        path.to_str().unwrap(),
+    ]);
+    let times: Vec<f64> = all(&path, &VideoOptions::default()).iter().map(|f| f.t).collect();
+    assert_eq!(times.len(), 30);
+    assert_eq!(times[..4], [0.0, 33.0, 67.0, 100.0], "{times:?}");
+}
