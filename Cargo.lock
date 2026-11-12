@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
+
+[[package]]
 name = "crossbeam-deque"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -40,6 +46,15 @@ version = "0.1.0"
 dependencies = [
  "cube-core",
  "rayon",
+ "serde_json",
+]
+
+[[package]]
+name = "cube-infer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cube-decode",
  "serde_json",
 ]
 
