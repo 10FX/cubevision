@@ -2,6 +2,7 @@
 //! `src/lib/vision` and `src/lib/smartcube`, the parts that need neither a model nor a camera.
 
 pub mod decode;
+pub mod delayed;
 pub mod help;
 pub mod live;
 pub mod mirror;

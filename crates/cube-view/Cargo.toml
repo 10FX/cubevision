@@ -1,0 +1,12 @@
+[package]
+name = "cube-view"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A Rubik's Cube drawn in 3D, turning move by move, for an egui window"
+
+[dependencies]
+cube-core = { path = "../cube-core" }
+egui = { version = "0.32", default-features = false }

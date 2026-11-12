@@ -104,6 +104,17 @@ impl LiveTracker {
         if self.beam.len() > 1 { self.beam[0].score - self.beam[1].score } else { f64::INFINITY }
     }
 
+    /// The first `k` turns of the likeliest state are settled: the states that do not begin with them are dropped,
+    /// and the turns of those left are counted from there on (a later turn of the same face does not merge
+    /// into a settled one)
+    pub fn commit(&mut self, k: usize) {
+        let settled: Vec<usize> = self.beam[0].moves.iter().take(k).copied().collect();
+        self.beam.retain(|h| h.moves.starts_with(&settled));
+        for h in &mut self.beam {
+            h.moves.drain(..settled.len());
+        }
+    }
+
     /// One frame's readings (empty: nothing could be read)
     pub fn update(&mut self, faces: &[FaceReading]) {
         if faces.is_empty() {

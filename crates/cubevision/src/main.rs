@@ -6,35 +6,65 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use cube_capture::{VideoOptions, VideoReader};
+use cube_capture::{CameraRequest, VideoOptions, VideoReader};
 use cube_decode::pipeline::{AnalyzeOptions, analyze_readings};
 use cube_infer::device::Device;
 use cube_infer::models::{BATCH, Models};
 use cubevision::colours::{colour, hold};
+use cubevision::live::{LiveOptions, Source};
 use cubevision::read::FrameLoop;
+use cubevision::replay_window;
+use cubevision::window::Snapshot;
 use serde_json::json;
 
 #[derive(Parser)]
 #[command(name = "cubevision", version, about = "Reads a Rubik's Cube from a camera or a video")]
 struct Cli {
+    /// Without a command: the live mode
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// The moves of a solve filmed, from its video and its scramble
+    /// The moves turned in front of the camera, as they are made, on a 3D cube (the default)
+    Live(LiveArgs),
+    /// The moves of a solve filmed, from its video and its scramble, played back on a 3D cube
     Video(VideoArgs),
 }
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Default)]
 struct Shared {
+    /// Save a picture of the window after --after seconds and close it (to check it unattended)
+    #[arg(long, value_name = "PNG", hide = true)]
+    screenshot: Option<PathBuf>,
+    #[arg(long, default_value_t = 6.0, hide = true)]
+    after: f64,
     /// Where the models run: cpu, cuda, directml, openvino-cpu, openvino-gpu, openvino-npu (default: the first that works)
     #[arg(long)]
     device: Option<Device>,
     /// The folder of the models (default: `models` next to the program)
     #[arg(long, env = "CUBE_MODELS")]
     models: Option<PathBuf>,
+}
+
+#[derive(clap::Args, Default)]
+struct LiveArgs {
+    /// Which camera: 0 is the system's first
+    #[arg(long, default_value_t = 0)]
+    camera: u32,
+    /// The size and rate asked of the camera; it gives the closest it has
+    #[arg(long, default_value_t = 1280)]
+    width: u32,
+    #[arg(long, default_value_t = 720)]
+    height: u32,
+    #[arg(long, default_value_t = 30)]
+    fps: u32,
+    /// A video played at its own pace in place of the camera, to try the live mode without one
+    #[arg(long, value_name = "VIDEO")]
+    source: Option<PathBuf>,
+    #[command(flatten)]
+    shared: Shared,
 }
 
 #[derive(clap::Args)]
@@ -53,9 +83,12 @@ struct VideoArgs {
     /// Colour of the cross (default: the one the solve shows)
     #[arg(long)]
     cross: Option<String>,
-    /// Print the result as JSON
+    /// Print the result as JSON, without opening a window
     #[arg(long)]
     json: bool,
+    /// Print the result as text, without opening a window
+    #[arg(long)]
+    no_window: bool,
     /// Read frame by frame, the detector looking at one frame in so many once the cube is read (default: batches, every frame)
     #[arg(long, value_name = "FRAMES")]
     detect_every: Option<u32>,
@@ -187,7 +220,19 @@ fn video(args: &VideoArgs) -> Result<bool> {
     if let Some(warning) = warning {
         eprintln!("warning: {warning}");
     }
-    Ok(result.solved)
+    let solved = result.solved;
+    if !args.json && !args.no_window && !mismatch {
+        replay_window::run(replay_window::Shown {
+            title: args.video.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            scramble: args.scramble.clone(),
+            device: device.name().to_owned(),
+            mirrored: read.mirrored,
+            warning: warning.map(str::to_owned),
+            result,
+            snapshot: Snapshot::new(args.shared.screenshot.clone(), args.shared.after),
+        })?;
+    }
+    Ok(solved)
 }
 
 /// Below this share of the stickers read fitting the moves found, an unsolved result is taken for a scramble
@@ -195,9 +240,21 @@ fn video(args: &VideoArgs) -> Result<bool> {
 /// 0.31, the right one on a solve the decoder could not finish 0.41 to 0.50.
 const MISMATCH: f64 = 0.35;
 
+fn live(args: &LiveArgs) -> Result<bool> {
+    let source = match &args.source {
+        Some(video) => Source::Video(video.clone()),
+        None => Source::Camera(CameraRequest { index: args.camera, width: args.width, height: args.height, fps: args.fps }),
+    };
+    let snapshot = Snapshot::new(args.shared.screenshot.clone(), args.shared.after);
+    cubevision::live::run(LiveOptions { source, models: models_dir(&args.shared.models)?, device: args.shared.device, snapshot })?;
+    Ok(true)
+}
+
 fn run() -> Result<bool> {
     match Cli::parse().command {
-        Command::Video(args) => video(&args),
+        Some(Command::Video(args)) => video(&args),
+        Some(Command::Live(args)) => live(&args),
+        None => live(&LiveArgs { width: 1280, height: 720, fps: 30, ..LiveArgs::default() }),
     }
 }
 
