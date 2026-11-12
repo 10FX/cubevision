@@ -251,6 +251,9 @@ pub struct AnalyzeOptions {
     pub decode: DecodeOptions,
     /// Moves the cuber vouches for, from the start of the solve, in their notation: the decoder finds the rest
     pub help: Option<String>,
+    /// The colour of the cross (U R F D L B: white red green yellow orange blue), when the cuber tells; None:
+    /// the one the solve shows
+    pub cross: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -290,10 +293,10 @@ pub fn analyze_readings(frames: &[FrameReadings], scramble: &str, o: &AnalyzeOpt
         Some(help) if !help.is_empty() => helped_solve(&holding.start, &readings, &help, decode),
         _ => decode(&holding.start, &readings),
     };
-    Some(finish(&holding, result, frames, o.camera.as_ref()))
+    Some(finish(&holding, result, frames, o.camera.as_ref(), o.cross))
 }
 
-fn finish(holding: &Holding, result: DecodeResult, frames: &[FrameReadings], camera: Option<&Mat3>) -> VisionResult {
+fn finish(holding: &Holding, result: DecodeResult, frames: &[FrameReadings], camera: Option<&Mat3>, cross: Option<u8>) -> VisionResult {
     // Moves as turned in the hands that scrambled, those that undo each other left out
     let moves = cancel_turns(&result.search.moves);
     let timed: Vec<TimedMove> = moves
@@ -312,7 +315,7 @@ fn finish(holding: &Holding, result: DecodeResult, frames: &[FrameReadings], cam
     let orientation = if oriented.is_empty() { None } else { cuber_view(&oriented, &moves, holding.hold, camera) };
     // Written as a reconstruction: the cross down from the start, rotations only between steps
     let tokens: Vec<String> = timed.iter().map(|m| m.token.clone()).collect();
-    let notation = present_solve(&holding.start_cube, &tokens, None);
+    let notation = present_solve(&holding.start_cube, &tokens, cross);
     VisionResult {
         reconstruction: reconstruct(&holding.start_cube, &timed, Some(&notation)),
         timed,

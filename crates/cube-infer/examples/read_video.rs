@@ -14,7 +14,7 @@ use cube_infer::device::Device;
 use cube_infer::follow::CubeFollower;
 use cube_infer::geometry::square_crop;
 use cube_infer::models::{BATCH, Models};
-use cube_infer::output::{TURNING, readings_from_output};
+use cube_infer::output::{Reader, TURNING, readings_from_output};
 use cube_infer::{BoxF, Frame};
 use rayon::prelude::*;
 

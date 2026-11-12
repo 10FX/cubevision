@@ -18,7 +18,7 @@ use serde_json::Value;
 use crate::device::{AUTO, Device, Precision};
 use crate::follow::{Detection, Detector, Look};
 use crate::geometry::{Letterbox, check, letterbox, tensor, unletterbox};
-use crate::output::ReaderOutput;
+use crate::output::{Reader, ReaderOutput};
 
 /// Images run together. A GPU session that changes input shape from one run to the next pays about 100 ms, so
 /// batches are always padded to this size, and single images run in a session of their own.
@@ -302,16 +302,6 @@ pub struct OnnxReader {
 }
 
 impl OnnxReader {
-    /// Side of the square it reads
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    /// Its stickers come in the cube's order
-    pub fn ordered(&self) -> bool {
-        self.meta.ordered
-    }
-
     /// The model itself on `n` squares (planes R, G, B in 0..1, one image after the other)
     pub fn run(&mut self, tensors: &[f32], n: usize) -> Result<Vec<ReaderOutput>> {
         let size = self.size;
@@ -346,10 +336,22 @@ impl OnnxReader {
             })
             .collect())
     }
+}
+
+impl Reader for OnnxReader {
+    /// Side of the square it reads
+    fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Its stickers come in the cube's order
+    fn ordered(&self) -> bool {
+        self.meta.ordered
+    }
 
     /// Crops read: RGBA squares of `size()`, as `square_crop` cuts them. One crop runs alone; several run in
     /// batches (far fewer runs' overhead per crop on a GPU), with the same outcome.
-    pub fn read(&mut self, crops: &[&[u8]]) -> Result<Vec<ReaderOutput>> {
+    fn read(&mut self, crops: &[&[u8]]) -> Result<Vec<ReaderOutput>> {
         let size = self.size;
         let plane = 3 * size * size;
         if let Some(crop) = crops.iter().find(|crop| crop.len() != size * size * 4) {

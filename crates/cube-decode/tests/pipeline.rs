@@ -128,3 +128,19 @@ fn probabilities_no_model_should_give_do_not_panic() {
     assert_eq!(tracker.state().len(), 54);
     assert!(!mirror.lead().is_nan());
 }
+
+#[test]
+fn the_cross_asked_changes_the_writing_not_the_moves() {
+    let (name, v) = &video_fixtures()[0];
+    let frames = frames(&v["frames"]);
+    let scramble = v["scramble"].as_str().unwrap();
+    let shown = analyze_readings(&frames, scramble, &AnalyzeOptions::default()).unwrap();
+    let mut written = std::collections::HashSet::new();
+    for cross in 0..6u8 {
+        let asked = analyze_readings(&frames, scramble, &AnalyzeOptions { cross: Some(cross), ..AnalyzeOptions::default() }).unwrap();
+        assert_eq!((&asked.timed, asked.solved, asked.agreement), (&shown.timed, shown.solved, shown.agreement), "{name}: cross {cross}");
+        written.insert(asked.reconstruction.solution.clone());
+    }
+    // One of the six is the one the solve shows; the others write the solve otherwise
+    assert!(written.contains(&shown.reconstruction.solution) && written.len() > 1, "{name}: {written:?}");
+}

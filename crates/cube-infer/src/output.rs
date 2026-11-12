@@ -38,6 +38,16 @@ impl ReaderOutput {
     }
 }
 
+/// What reads the crops of the cube: the trained reader, or a stand-in in tests
+pub trait Reader {
+    /// Side of the square it reads
+    fn size(&self) -> usize;
+    /// Its stickers come in the cube's order
+    fn ordered(&self) -> bool;
+    /// Crops read: RGBA squares of `size()`
+    fn read(&mut self, crops: &[&[u8]]) -> anyhow::Result<Vec<ReaderOutput>>;
+}
+
 /// Model outputs → readings for the search (faces read, stickers hidden by a finger left None). `ordered`: the
 /// reader gives the stickers in the cube's order; `still`: the crop did not change since the frame before, so no
 /// layer is on its way and the reader's "turning" is not heeded.

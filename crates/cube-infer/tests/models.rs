@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use cube_infer::device::{AUTO, Device, Precision};
 use cube_infer::follow::{Detector, Look};
 use cube_infer::models::{BATCH, Models, metadata};
+use cube_infer::output::Reader;
 use cube_infer::{BoxF, Frame};
 
 #[test]
