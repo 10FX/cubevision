@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+# Generated datasets, assets and training runs stay on the training machine
+data/
+runs/
+evals/
+*.onnx
+*.pt

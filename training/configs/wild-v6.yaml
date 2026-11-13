@@ -1,0 +1,38 @@
+# The reader v6: v5 trained on (make train-wild-v6), on 150k more wild renders (seed 4)
+# (v5 gained 0.7 points of faces read exactly on the same renders; more renders should give more)
+# Not shipped: faces read exactly 0.540 -> 0.553 on val, but on the synthetic solves (search at 1.8)
+# moves exact 82.7 -> 83.6 % and 78.2 -> 69.7 %, solved 25 -> 23/40 and 10 -> 7/20, rotations 154 -> 134/295;
+# v5 and v6 weights averaged: 82.8 % and 71.8 %, solved 24/40 and 8/20
+model:
+  backbone: mobilenet_v3_large
+  image_size: 192
+  dim: 128
+  heads: 4
+  layers: 2
+  token_stride: 8
+  colour_tokens: true
+  geometric: true
+  symmetric: true
+data:
+  train: [data/synth/train, data/synth/train2]
+  val: [data/synth/val]
+  workers: 4
+train:
+  name: reader-v6
+  epochs: 12
+  batch_size: 128
+  lr: 0.0004
+  backbone_lr_scale: 0.3
+  amp: bf16
+  channels_last: true
+  teach_start: 0.3
+  teach_end: 0.3
+augment:
+  motion_p: 0.4
+  lowres_p: 0.5
+  lowres_scale: [0.12, 0.8]
+  jpeg_p: 0.5
+  jpeg_quality: [8.0, 90.0]
+  flicker_p: 0.1
+  overexpose_p: 0.08
+  recompress_p: 0.15

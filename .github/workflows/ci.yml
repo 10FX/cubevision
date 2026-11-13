@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Processor only: no model, no ONNX Runtime, no camera. The tests that need them are ignored by default.
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - name: Lint
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --release
+
+  training:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: training
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      # PyTorch for the processor: the locked one is the CUDA build, several gigabytes
+      - name: Dependencies
+        run: |
+          uv venv
+          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          uv pip install numpy pillow pyyaml timm onnx onnxruntime onnxscript onnxconverter-common pytest ruff
+      - name: Lint
+        run: uv run --no-sync ruff check .
+      - name: Tests
+        run: uv run --no-sync pytest -q

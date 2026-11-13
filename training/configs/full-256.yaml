@@ -1,0 +1,16 @@
+# The full reader at 256 px, to compare with 192 (configs/full.yaml) on the same renders.
+model:
+  backbone: mobilenet_v3_large
+  image_size: 256
+  dim: 128
+  layers: 2
+data:
+  train: [data/synth/train]
+  val: [data/synth/val]
+  workers: 8
+train:
+  name: full-256
+  epochs: 30
+  batch_size: 96
+  lr: 0.0012
+  amp: bf16

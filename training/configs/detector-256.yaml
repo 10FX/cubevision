@@ -1,0 +1,14 @@
+# The cube detector on 256 px frames: 1.56 times fewer pixels than 320 for the processor (WASM), the
+# weights of detector-v4 fine-tuned (runs/detector-v5.sh)
+model:
+  size: 256
+data:
+  train: [data/detect/train]
+  val: [data/detect/val]
+  workers: 4
+train:
+  name: detector-v5
+  epochs: 12
+  batch_size: 64
+  lr: 0.0005
+  amp: bf16

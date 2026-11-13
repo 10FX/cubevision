@@ -1,0 +1,35 @@
+# The reader v4: v3's model (MobileNetV3-Large at 192 px, geometric and symmetric), from v3's weights
+# (make train-wild), on the wild renders, footage as it comes squeezed harder still
+model:
+  backbone: mobilenet_v3_large
+  image_size: 192
+  dim: 128
+  heads: 4
+  layers: 2
+  token_stride: 8
+  colour_tokens: true
+  geometric: true
+  symmetric: true
+data:
+  train: [data/synth/train]
+  val: [data/synth/val]
+  workers: 8
+train:
+  name: reader-v4
+  epochs: 20
+  batch_size: 128
+  lr: 0.001
+  backbone_lr_scale: 0.3
+  amp: bf16
+  channels_last: true
+  teach_start: 0.3
+  teach_end: 0.3
+augment:
+  motion_p: 0.4
+  lowres_p: 0.5
+  lowres_scale: [0.12, 0.8]
+  jpeg_p: 0.5
+  jpeg_quality: [8.0, 90.0]
+  flicker_p: 0.1
+  overexpose_p: 0.08
+  recompress_p: 0.15

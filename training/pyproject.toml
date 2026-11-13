@@ -1,0 +1,46 @@
+[project]
+name = "cubevision"
+version = "0.1.0"
+description = "Synthetic data, training and export of the cube detector and reader that cubevision runs"
+# bpy 5.2 is built for Python 3.13 only
+requires-python = ">=3.13,<3.14"
+dependencies = ["numpy>=2.1", "pillow>=11", "pyyaml>=6"]
+
+[project.optional-dependencies]
+# Synthetic images (Blender as a Python module)
+render = ["bpy==5.2.2"]
+# Training, evaluation and export
+train = [
+    "torch>=2.7",
+    "torchvision>=0.22",
+    "tensorboard>=2.18",
+    "onnx>=1.17",
+    "onnxruntime>=1.20",
+    "onnxconverter-common>=1.14",
+    "onnxscript>=0.2",
+    "timm>=1.0.20",  # MobileNetV4 backbones
+]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+# RTX 50xx (Blackwell) need PyTorch built for CUDA 12.8 or later
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP"]
+ignore = ["E731"]

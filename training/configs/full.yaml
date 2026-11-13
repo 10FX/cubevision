@@ -1,0 +1,16 @@
+# The reader shipped as "full" (WebGPU, fp16): MobileNetV3-Large at 192 px.
+model:
+  backbone: mobilenet_v3_large
+  image_size: 192
+  dim: 128
+  layers: 2
+data:
+  train: [data/synth/train]
+  val: [data/synth/val]
+  workers: 8
+train:
+  name: full
+  epochs: 30
+  batch_size: 128
+  lr: 0.0015
+  amp: bf16

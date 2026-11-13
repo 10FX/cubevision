@@ -1,0 +1,13 @@
+# The cube detector: SSDLite320-MobileNetV3 (COCO weights) fine-tuned on whole frames.
+model:
+  size: 320
+data:
+  train: [data/detect/train]
+  val: [data/detect/val]
+  workers: 8
+train:
+  name: detector
+  epochs: 24
+  batch_size: 64
+  lr: 0.001
+  amp: bf16

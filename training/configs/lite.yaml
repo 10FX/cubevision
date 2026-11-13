@@ -1,0 +1,16 @@
+# Smaller reader for weak devices (WASM): MobileNetV3-Small at 160 px.
+model:
+  backbone: mobilenet_v3_small
+  image_size: 160
+  dim: 96
+  layers: 2
+data:
+  train: [data/synth/train]
+  val: [data/synth/val]
+  workers: 8
+train:
+  name: lite
+  epochs: 40
+  batch_size: 192
+  lr: 0.002
+  amp: bf16

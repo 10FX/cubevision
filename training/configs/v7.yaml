@@ -1,0 +1,43 @@
+# The reader v7 (make train-v7), from ImageNet weights: MobileNetV4-conv-medium (timm) at 224 px, a wider decoder;
+# trained on the renders before (labels redone by relabel.py: a sticker seen by any of its points is read) and twice
+# on the solve stages (make data-v7: every algorithm of the site, any hold, loose layers, smeared glances, cameras
+# out of focus, burnt colours), more blur and burnt colours added in training
+# CPU (onnxruntime, 4 threads): 13 ms an image, v6 5 ms
+model:
+  backbone: mobilenetv4_conv_medium
+  image_size: 224
+  dim: 192
+  heads: 6
+  layers: 3
+  token_stride: 8
+  colour_tokens: true
+  geometric: true
+  symmetric: true
+data:
+  train: [data/synth/train, data/synth/train2, data/synth/train3, data/synth/train-v7, data/synth/train-v7]
+  val: [data/synth/val-v7, data/synth/val]
+  workers: 8
+train:
+  name: reader-v7
+  epochs: 10
+  batch_size: 128
+  lr: 0.001
+  backbone_lr_scale: 0.3
+  amp: bf16
+  channels_last: true
+  teach_start: 0.3
+  teach_end: 0.3
+augment:
+  saturation: 0.5
+  blur_p: 0.4
+  blur_sigma: [0.3, 3.0]
+  motion_p: 0.55
+  motion_length: [3, 31]
+  defocus_p: 0.3
+  lowres_p: 0.5
+  lowres_scale: [0.12, 0.8]
+  jpeg_p: 0.5
+  jpeg_quality: [8.0, 90.0]
+  flicker_p: 0.1
+  overexpose_p: 0.15
+  recompress_p: 0.15

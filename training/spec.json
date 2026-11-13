@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "faces": ["U", "R", "F", "D", "L", "B"],
+  "colors": ["white", "red", "green", "yellow", "orange", "blue"],
+  "hidden": 6,
+  "layout": "StickerCube (src/lib/cube/stickerCube.ts): faces U R F D L B, 9 stickers each, row by row as seen from outside; U with B at the top, D with F at the top, side faces with U at the top. Colour k is the colour of face k in the WCA scrambling orientation (white U, green F).",
+  "input": {
+    "size": "192 for the full reader, its own size for the lite one (cube-reader.json: variants.<kind>.size)",
+    "channels": "RGB",
+    "range": "0..1, NCHW float32; the model normalizes internally",
+    "crop": "square crop of the cube: the detector's box times 1.5 (else findCube, src/lib/vision/roi.ts), area-averaged"
+  },
+  "outputs": {
+    "present": "[N, 6] probability that the face whose centre has colour k can be read",
+    "stickers": "[N, 6, 9, 7] per face k and cell i: probabilities of the 6 colours and of 'hidden'. Cells are in StickerCube order up to an unknown rotation of the face (0, 90, 180, 270 degrees); the centre cell (4) is the face colour",
+    "turning": "[N, 1] probability that a layer is between two positions (frame to be ignored)",
+    "orientation": "[N, 3, 3] rotation taking the WCA directions of the centres (white +y, red +x, green +z) to where they point in the camera's frame (x right, y up, z towards the viewer), for the crop given"
+  },
+  "detector": {
+    "input": "the whole frame letterboxed into a 320×320 square (longer side fitted, grey 0.5 bars), RGB 0..1, NCHW",
+    "outputs": "box [N, 4]: the whole cube's box (hidden pieces included), x0 y0 x1 y1 as shares of the square, may pass its edges; score [N, 1]",
+    "crop": "the reader's crop: a square of the box's longer side times cropMargin (1.5) around its centre",
+    "zoom": "a cube under 25 % of the frame's longer side (or, when none is found, the box followed so far) is detected again in a square of 4 times its box around it, letterboxed the same way, grey past the frame's edges (src/lib/vision/detector.ts)",
+    "files": "public/models/cube-detector.{fp16,int8}.onnx and cube-detector.json"
+  },
+  "models": {
+    "full": "public/models/cube-reader.fp16.onnx",
+    "lite": "public/models/cube-reader.int8.onnx",
+    "metadata": "public/models/cube-reader.json: input name, and for each variant (full, lite) its file and input size"
+  }
+}
