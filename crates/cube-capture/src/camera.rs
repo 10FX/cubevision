@@ -36,6 +36,8 @@ pub struct CameraFormat {
     pub height: usize,
     /// Frames a second it says it gives; in poor light many cameras give fewer
     pub fps: u32,
+    /// How the camera encodes its frames (MJPEG, YUYV, NV12…), as it tells
+    pub pixels: String,
 }
 
 /// How long a camera may take to open and give its first frame
@@ -167,6 +169,7 @@ mod platform {
                         width: format.width() as usize,
                         height: format.height() as usize,
                         fps: rate(format, set),
+                        pixels: format.format().to_string(),
                     }));
                     camera
                 }
@@ -317,7 +320,7 @@ mod platform {
         command.args(arguments(request));
         let (width, height) = (request.width as usize, request.height as usize);
         let child = pump(command, index, width, height, latest, stop)?;
-        Ok((CameraFormat { name: device, width, height, fps: request.fps }, Some(child)))
+        Ok((CameraFormat { name: device, width, height, fps: request.fps, pixels: "MJPEG".into() }, Some(child)))
     }
 
     #[cfg(test)]
@@ -354,7 +357,12 @@ mod platform {
             let child = pump(shell("exec sleep 30"), 0, 4, 4, latest.clone(), stop.clone()).unwrap();
             let pid = child.lock().unwrap().id();
             assert!(alive(pid));
-            drop(Camera { latest, format: CameraFormat { name: "test".into(), width: 4, height: 4, fps: 30 }, stop, child: Some(child) });
+            drop(Camera {
+                latest,
+                format: CameraFormat { name: "test".into(), width: 4, height: 4, fps: 30, pixels: "test".into() },
+                stop,
+                child: Some(child),
+            });
             let gone = Instant::now();
             while alive(pid) && gone.elapsed() < Duration::from_secs(5) {
                 std::thread::sleep(Duration::from_millis(10));

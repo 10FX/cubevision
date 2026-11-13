@@ -69,11 +69,27 @@ pub fn models(dir: &Path, device: Option<Device>, seconds: f64) -> Result<Models
     Ok(models)
 }
 
-/// The camera read with the models for `seconds`, as the live mode reads it
-pub fn camera(models: Models, request: &CameraRequest, seconds: f64) -> Result<()> {
+/// An RGBA picture written as a PNG
+pub fn save_png(file: &Path, rgba: &[u8], width: usize, height: usize) -> Result<()> {
+    let out = std::io::BufWriter::new(std::fs::File::create(file)?);
+    let mut encoder = png::Encoder::new(out, width as u32, height as u32);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header()?.write_image_data(&rgba[..width * height * 4])?;
+    Ok(())
+}
+
+/// The camera read with the models for `seconds`, as the live mode reads it. `crop`: where to save the crop the
+/// reader saw the most of a cube in, for the user to look at (nothing is saved otherwise).
+pub fn camera(models: Models, request: &CameraRequest, seconds: f64, crop: Option<&Path>) -> Result<()> {
     let camera = Camera::open(request)?;
     let f = camera.format();
-    println!("camera: {} {}×{} at {} fps", f.name, f.width, f.height, f.fps);
+    println!("camera: {} {}×{} at {} fps, pixels as {}", f.name, f.width, f.height, f.fps, f.pixels);
+    let mut colour = [0u64; 3];
+    let mut sampled = 0u64;
+    // What the reader says before any threshold: how present the likeliest face is, how sure its stickers
+    let (mut presence, mut turned, mut present_faces, mut kept_faces) = (0.0f64, 0.0f64, 0usize, 0usize);
+    let mut best: Option<(f32, Vec<u8>)> = None;
     let Models { detector, mut reader, .. } = models;
     let mut follower = CubeFollower::new(detector, 3);
     let (mut frames, mut found, mut read, mut turning, mut faces) = (0usize, 0usize, 0usize, 0usize, 0usize);
@@ -83,9 +99,22 @@ pub fn camera(models: Models, request: &CameraRequest, seconds: f64) -> Result<(
         let Some(image) = camera.wait(Duration::from_millis(200))? else { continue };
         let t = Instant::now();
         let frame = Frame { data: &image.data, width: image.width, height: image.height };
+        for px in image.data.chunks_exact(4).step_by(97) {
+            (0..3).for_each(|c| colour[c] += px[c] as u64);
+            sampled += 1;
+        }
         if let Some(boxed) = follower.crop(&frame)? {
-            let out = reader.read(&[&square_crop(&frame, &boxed, reader.size())])?.remove(0);
+            let square = square_crop(&frame, &boxed, reader.size());
+            let out = reader.read(&[&square])?.remove(0);
             let readings = readings_from_output(&out, reader.ordered(), false);
+            let most = out.present.iter().fold(0.0f32, |a, &b| a.max(b));
+            presence += most as f64;
+            turned += out.turning as f64;
+            present_faces += out.present.iter().filter(|&&p| p >= 0.5).count();
+            kept_faces += readings.len();
+            if crop.is_some() && best.as_ref().is_none_or(|(seen, _)| most > *seen) {
+                best = Some((most, square));
+            }
             follower.read(!readings.is_empty() || out.turning > TURNING);
             found += 1;
             read += !readings.is_empty() as usize;
@@ -105,6 +134,18 @@ pub fn camera(models: Models, request: &CameraRequest, seconds: f64) -> Result<(
         faces as f64 / read.max(1) as f64,
         share(turning)
     );
+    let mean = |c: usize| colour[c] as f64 / sampled.max(1) as f64;
+    println!("mean colour of the frames (red green blue): {:.0} {:.0} {:.0}", mean(0), mean(1), mean(2));
+    let per = found.max(1) as f64;
+    println!(
+        "reader, where the cube is found: likeliest face present {:.2} on average, turning {:.2}; faces present {present_faces}, kept as sure enough {kept_faces}",
+        presence / per,
+        turned / per
+    );
+    if let (Some(file), Some((seen, square))) = (crop, &best) {
+        save_png(file, square, reader.size(), reader.size())?;
+        println!("crop saved to {} (likeliest face present {seen:.2}): what the reader was given, to look at", file.display());
+    }
     Ok(())
 }
 

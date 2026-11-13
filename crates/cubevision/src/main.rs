@@ -61,6 +61,9 @@ struct CheckArgs {
     /// Which camera: 0 is the system's first
     #[arg(long, default_value_t = 0)]
     camera: u32,
+    /// With the camera: save the crop where the reader saw the most of a cube to this PNG, to look at
+    #[arg(long, value_name = "PNG")]
+    save_crop: Option<PathBuf>,
     #[command(flatten)]
     shared: Shared,
 }
@@ -274,7 +277,12 @@ fn run() -> Result<bool> {
         Some(Command::Check(args)) => {
             let models = cubevision::check::models(&models_dir(&args.shared.models)?, args.shared.device, args.seconds)?;
             if args.with_camera {
-                cubevision::check::camera(models, &CameraRequest { index: args.camera, ..CameraRequest::default() }, args.seconds)?;
+                cubevision::check::camera(
+                    models,
+                    &CameraRequest { index: args.camera, ..CameraRequest::default() },
+                    args.seconds,
+                    args.save_crop.as_deref(),
+                )?;
             }
             Ok(true)
         }
