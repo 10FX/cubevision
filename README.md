@@ -11,8 +11,7 @@ use (timer, reconstructions, community), use ChronoCube.
 > **Status: early, and it runs.** The two modes exist: `cubevision live` writes the moves you make in
 > front of the camera on a 3D cube, and `cubevision video` finds the moves of a filmed solve and plays
 > them back. Underneath, five crates rewrite ChronoCube's vision in Rust and are checked against it.
-> Still to come: the video's picture and the cube's measured orientation in the replay, the training
-> code, benchmarks and CI; the [roadmap](#roadmap) says what comes in which order.
+> Still to come: the video's picture next to the replay, the training code, benchmarks and CI; the [roadmap](#roadmap) says what comes in which order.
 >
 > **Try it on Windows in two minutes:** download `cubevision-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
@@ -43,10 +42,11 @@ tracker is sure of it, and a written move never changes afterwards. A 3D cube pl
 are named by the colour of their centre, so you can hold and rotate the cube any way you like.
 
 **Video: `cubevision video solve.mp4 --scramble "R U R' …"`.** Give a video of a solve and its scramble.
-cubevision returns every move of the solve, played on a 3D cube, with a playback bar that keeps the cube
-and the move list in step (by move, at a quarter, half or full speed). It also gives the rotations, wide
-moves and slices, the CFOP steps and their times, and the turns per second. Not there yet: the video's
-picture next to the cube, and the cube following the orientation measured in the video. If the
+cubevision returns every move of the solve, played on a 3D cube that turns as the cube did in the
+cuber's hands (the orientation read in the video), cross down from the first move, with a playback bar
+that keeps the cube and the move list in step (by move, at a quarter, half or full speed). It also gives
+the rotations, wide moves and slices, the CFOP steps and their times, and the turns per second. Not there
+yet: the video's picture next to the cube. If the
 scramble was done with other colours on top and in front, say so with `--top` and `--front`. With
 `--json` you get the same result without a window.
 
@@ -181,6 +181,19 @@ lands a few pixels away (the native engine against WebAssembly, by all appearanc
 carries the difference on. Decoding takes 1.3 to 3.2 s more. A scramble that is not the video's is told
 apart from a solve merely hard to follow: it explains under 35 % of the stickers read (0.27 to 0.31 on
 these videos, against 0.41 to 0.50 for the right scramble on the unsolved one).
+
+**On a laptop.** An Intel Core Ultra 5 125H with Arc graphics and its built-in camera (MJPEG 1280×720 at
+30 fps), from `test.bat` with a cube in hand, then the live mode tried and found to follow the moves:
+
+| Engine | Models alone | Camera frames read | Cube found | Faces read |
+|---|---|---|---|---|
+| OpenVINO on the GPU | 41 frames a second | 30 a second, 1 skipped in 15 s | 100 % | on 84 % of frames |
+| DirectML | 22 | 25.5 a second, 68 skipped | 100 % | on 98 % |
+| OpenVINO on the processor | 22 | not measured | | |
+| Processor alone | 6 | not measured | | |
+| OpenVINO on the NPU | fails: the driver loses the device (`ZE_RESULT_ERROR_DEVICE_LOST`) | | | |
+
+The first OpenVINO start compiles the models for the GPU (a minute); it is kept for the next ones.
 
 ## Models
 
@@ -466,8 +479,7 @@ All six exist.
 2. ~~`cube-core`, then `cube-decode`, checked against ChronoCube's results.~~ Done.
 3. ~~`cube-infer` and `cube-capture`.~~ Done; the camera on Linux still to try on a real one.
 4. ~~Video mode in JSON, compared with the web app on the same synthetic videos.~~ Done.
-5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done, but for the video's picture and the measured
-   orientation in the replay; wide moves and slices jump instead of turning.
+5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done, but for the video's picture next to the replay.
 6. `training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.
 7. A larger reader for the PC, trained on renders only.
 

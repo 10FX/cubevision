@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use cube_core::Cube;
 use egui::{Color32, Pos2, Response, Sense, Shape, Stroke, Ui, Vec2};
 
-use crate::geometry::{quads, view};
+use crate::geometry::{IDENTITY, Mat3, mul, quads, view};
 
 /// A face turn being played
 struct Playing {
@@ -26,6 +26,8 @@ pub struct CubeView {
     pub pitch: f32,
     /// Seconds a quarter turn takes on screen; moves waiting make it shorter
     pub quarter_seconds: f32,
+    /// How the whole cube is turned in the hands, before the eye's own view: a replay sets it as the solve goes
+    pub held: Mat3,
 }
 
 /// A face turn's face and quarter turns, clockwise ("U", "R2", "F'"); None for anything else
@@ -42,7 +44,7 @@ pub fn face_turn(token: &str) -> Option<(usize, f32)> {
 
 impl CubeView {
     pub fn new(cube: Cube) -> Self {
-        CubeView { cube, waiting: VecDeque::new(), playing: None, yaw: -30.0, pitch: 25.0, quarter_seconds: 0.18 }
+        CubeView { cube, waiting: VecDeque::new(), playing: None, yaw: -30.0, pitch: 25.0, quarter_seconds: 0.18, held: IDENTITY }
     }
 
     /// The cube as it is once every move handed over is played
@@ -108,7 +110,7 @@ impl CubeView {
         }
         let painter = ui.painter_at(rect);
         let (centre, half) = (rect.center(), side / 2.0);
-        for quad in quads(&self.cube.colors(), turning, &view(self.yaw, self.pitch)) {
+        for quad in quads(&self.cube.colors(), turning, &mul(&view(self.yaw, self.pitch), &self.held)) {
             let points: Vec<Pos2> = quad.points.iter().map(|p| Pos2::new(centre.x + p[0] * half, centre.y + p[1] * half)).collect();
             let [r, g, b] = quad.colour;
             painter.add(Shape::convex_polygon(points, Color32::from_rgb(r, g, b), Stroke::NONE));

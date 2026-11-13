@@ -51,7 +51,7 @@ impl ReplayApp {
     fn step(&mut self, forward: bool) {
         self.playing = false;
         if forward && self.made < self.replay.len() {
-            self.replay.written[self.made].iter().for_each(|t| self.cube.play(t));
+            self.cube.play(&self.replay.turns[self.made]);
             self.made += 1;
             self.clock = self.replay.time_of(self.made);
         } else if !forward && self.made > 0 {
@@ -71,8 +71,8 @@ impl ReplayApp {
         }
         self.clock += elapsed * 1000.0 * self.speed;
         let due = self.replay.moves_at(self.clock);
-        for moves in &self.replay.written[self.made.min(due)..due] {
-            moves.iter().for_each(|t| self.cube.play(t));
+        for turn in &self.replay.turns[self.made.min(due)..due] {
+            self.cube.play(turn);
         }
         self.made = self.made.max(due);
         if self.clock >= self.replay.span().1 {
@@ -85,6 +85,7 @@ impl eframe::App for ReplayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.shown.snapshot.tick(ctx);
         self.tick(ctx.input(|i| i.time));
+        self.cube.held = self.replay.orientation(self.clock);
         if self.playing {
             ctx.request_repaint();
         }
