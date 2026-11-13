@@ -20,11 +20,13 @@ pub struct VideoOptions {
     pub ffmpeg: String,
     /// Wider videos are shrunk to this width, as ChronoCube reads them (1280); None: as filmed
     pub max_width: Option<u32>,
+    /// Where to start in the video, seconds: the frames before are left out, the times stay the video's
+    pub start: f64,
 }
 
 impl Default for VideoOptions {
     fn default() -> Self {
-        VideoOptions { ffmpeg: "ffmpeg".into(), max_width: Some(1280) }
+        VideoOptions { ffmpeg: "ffmpeg".into(), max_width: Some(1280), start: 0.0 }
     }
 }
 
@@ -54,6 +56,8 @@ pub struct VideoReader {
     times: Receiver<f64>,
     /// Once ffmpeg stopped telling: the times come from the frame rate
     untimed: bool,
+    /// Where the reading started, seconds: ffmpeg counts the times from there
+    start: f64,
     errors: Arc<Mutex<Vec<String>>>,
     read: u64,
 }
@@ -95,6 +99,7 @@ fn scaled(width: u32, height: u32, max_width: Option<u32>) -> (u32, u32) {
 impl VideoReader {
     pub fn open(path: &Path, options: &VideoOptions) -> Result<VideoReader> {
         let ffmpeg = &options.ffmpeg;
+        let start = if options.start.is_finite() { options.start.max(0.0) } else { 0.0 };
         let ffprobe = ffprobe_for(ffmpeg);
         let probe = Command::new(&ffprobe)
             .args(["-v", "error", "-select_streams", "v:0", "-show_entries"])
@@ -133,7 +138,10 @@ impl VideoReader {
         // showinfo tells each frame's time on the error stream, one line a frame, in the order of the frames
         let filter = if options.max_width.is_some() { format!("scale={out_width}:{out_height},showinfo") } else { "showinfo".to_string() };
         let mut child = Command::new(ffmpeg)
-            .args(["-nostdin", "-nostats", "-loglevel", "level+info", "-i"])
+            .args(["-nostdin", "-nostats", "-loglevel", "level+info"])
+            // Before the input: ffmpeg jumps to the key frame before and decodes up to the time asked
+            .args(if start > 0.0 { vec!["-ss".to_string(), format!("{start:.3}")] } else { Vec::new() })
+            .arg("-i")
             .arg(path)
             .args(["-map", "0:v:0", "-vf", &filter, "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
             .stdin(Stdio::null())
@@ -164,7 +172,7 @@ impl VideoReader {
                 }
             }
         });
-        Ok(VideoReader { child, stdout, info, path: path.to_path_buf(), times, untimed: false, errors, read: 0 })
+        Ok(VideoReader { child, stdout, info, path: path.to_path_buf(), times, untimed: false, start, errors, read: 0 })
     }
 
     pub fn info(&self) -> &VideoInfo {
@@ -176,10 +184,10 @@ impl VideoReader {
     fn time(&mut self) -> f64 {
         let told = if self.untimed { None } else { self.times.recv_timeout(Duration::from_secs(5)).ok() };
         match told.filter(|t| t.is_finite()) {
-            Some(seconds) => js_round(seconds * 1000.0),
+            Some(seconds) => js_round((self.start + seconds) * 1000.0),
             None => {
                 self.untimed |= told.is_none();
-                js_round(self.read as f64 * 1000.0 / self.info.fps)
+                js_round(self.start * 1000.0 + self.read as f64 * 1000.0 / self.info.fps)
             }
         }
     }

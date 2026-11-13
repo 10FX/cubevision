@@ -186,3 +186,20 @@ fn a_title_that_looks_like_a_frame_time_is_not_one() {
     assert_eq!(times.len(), 30);
     assert_eq!(times[..4], [0.0, 33.0, 67.0, 100.0], "{times:?}");
 }
+
+#[test]
+fn a_video_is_read_from_where_asked_with_its_own_times() {
+    let path = test_video("later.mp4", "320x240");
+    let from = VideoOptions { start: 0.5, ..VideoOptions::default() };
+    let images = all(&path, &from);
+    // Half of the 30 frames, the first one at half a second of the video
+    assert!((14..=16).contains(&images.len()), "{} frames", images.len());
+    assert!((images[0].t - 500.0).abs() <= 34.0, "starts at {} ms", images[0].t);
+    assert_eq!(images.last().unwrap().t, 967.0);
+    assert!(images.windows(2).all(|w| w[1].t > w[0].t));
+    // Past the end: no frame, said as such; a start that is no number is the beginning
+    let past = VideoOptions { start: 30.0, ..VideoOptions::default() };
+    let mut reader = VideoReader::open(&path, &past).unwrap();
+    assert!(reader.next_image().is_err());
+    assert_eq!(all(&path, &VideoOptions { start: f64::NAN, ..VideoOptions::default() }).len(), 30);
+}

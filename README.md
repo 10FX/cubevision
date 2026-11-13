@@ -11,7 +11,7 @@ use (timer, reconstructions, community), use ChronoCube.
 > **Status: early, and it runs.** The two modes exist: `cubevision live` writes the moves you make in
 > front of the camera on a 3D cube, and `cubevision video` finds the moves of a filmed solve and plays
 > them back. Underneath, five crates rewrite ChronoCube's vision in Rust and are checked against it.
-> Still to come: the video's picture next to the replay, the training code, benchmarks and CI; the [roadmap](#roadmap) says what comes in which order.
+> Still to come: the training code, benchmarks and CI; the [roadmap](#roadmap) says what comes in which order.
 >
 > **Try it on Windows in two minutes:** download `cubevision-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
@@ -45,8 +45,8 @@ are named by the colour of their centre, so you can hold and rotate the cube any
 cubevision returns every move of the solve, played on a 3D cube that turns as the cube did in the
 cuber's hands (the orientation read in the video), cross down from the first move, with a playback bar
 that keeps the cube and the move list in step (by move, at a quarter, half or full speed). It also gives
-the rotations, wide moves and slices, the CFOP steps and their times, and the turns per second. Not there
-yet: the video's picture next to the cube. If the
+the rotations, wide moves and slices, the CFOP steps and their times, and the turns per second. The video
+plays next to the cube, on the same clock. If the
 scramble was done with other colours on top and in front, say so with `--top` and `--front`. With
 `--json` you get the same result without a window.
 
@@ -479,7 +479,7 @@ All six exist.
 2. ~~`cube-core`, then `cube-decode`, checked against ChronoCube's results.~~ Done.
 3. ~~`cube-infer` and `cube-capture`.~~ Done; the camera on Linux still to try on a real one.
 4. ~~Video mode in JSON, compared with the web app on the same synthetic videos.~~ Done.
-5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done, but for the video's picture next to the replay.
+5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done.
 6. `training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.
 7. A larger reader for the PC, trained on renders only.
 

@@ -1,6 +1,12 @@
 //! The window of a solve found in a video: the 3D cube playing it, a bar to move through it, what was measured
 
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use anyhow::Result;
+use cube_capture::{Image, Latest, VideoOptions, VideoReader};
 use cube_decode::pipeline::VisionResult;
 use cube_view::CubeView;
 use eframe::egui;
@@ -10,6 +16,9 @@ use crate::window::{Snapshot, token};
 
 /// What the window shows besides the result itself
 pub struct Shown {
+    /// The video, shown next to the cube, and the ffmpeg that reads it
+    pub video: PathBuf,
+    pub ffmpeg: String,
     pub title: String,
     pub scramble: String,
     pub device: String,
@@ -19,8 +28,52 @@ pub struct Shown {
     pub snapshot: Snapshot,
 }
 
+/// Widest picture of the video shown
+const PICTURE: u32 = 640;
+
+/// The video's frames for the window, in a thread of its own: it keeps to the replay's clock (the time wanted,
+/// ms), reading on while the clock moves forward and starting again from there when it jumps
+fn pictures(video: PathBuf, ffmpeg: String, wanted: Arc<Mutex<f64>>, out: Latest<Image>, stop: Arc<AtomicBool>, ctx: egui::Context) {
+    let mut reader: Option<VideoReader> = None;
+    // The time of the last frame read, and whether the video ended there
+    let (mut at, mut ended) = (f64::NEG_INFINITY, false);
+    while !stop.load(Ordering::Relaxed) {
+        let target = *wanted.lock().unwrap();
+        // Behind the last frame, or far ahead of it: read again from there (a little before, to show a frame at once)
+        if reader.is_none() || target < at - 60.0 || target > at + 1500.0 {
+            let options = VideoOptions { ffmpeg: ffmpeg.clone(), max_width: Some(PICTURE), start: (target - 40.0).max(0.0) / 1000.0 };
+            match VideoReader::open(&video, &options) {
+                Ok(opened) => reader = Some(opened),
+                Err(e) => return out.fail(format!("{e:#}")),
+            }
+            (at, ended) = (target - 41.0, false);
+        }
+        if ended || at >= target {
+            std::thread::sleep(Duration::from_millis(4));
+            continue;
+        }
+        match reader.as_mut().unwrap().next_image() {
+            Ok(Some(image)) => {
+                at = image.t;
+                // The frames on the way to the time wanted are not shown
+                if image.t >= target - 45.0 {
+                    out.put(image);
+                    ctx.request_repaint();
+                }
+            }
+            // The end of the video, or a start past it: the last picture stays
+            Ok(None) | Err(_) => ended = true,
+        }
+    }
+}
+
 struct ReplayApp {
     shown: Shown,
+    /// The time of the video the picture should show, its frames as they come, the one on screen
+    wanted: Arc<Mutex<f64>>,
+    frames: Latest<Image>,
+    picture: Option<egui::TextureHandle>,
+    stop: Arc<AtomicBool>,
     replay: Replay,
     cube: CubeView,
     /// The video's time now, ms, and the moves the cube has been handed
@@ -32,11 +85,17 @@ struct ReplayApp {
 }
 
 impl ReplayApp {
-    fn new(shown: Shown) -> Self {
+    fn new(shown: Shown, ctx: &egui::Context) -> Self {
         let replay = Replay::new(&shown.scramble, &shown.result);
         let cube = CubeView::new(replay.cube_at(0));
         let clock = replay.span().0;
-        ReplayApp { shown, replay, cube, clock, made: 0, playing: true, speed: 1.0, last: None }
+        let (wanted, frames, stop) = (Arc::new(Mutex::new(clock)), Latest::new(), Arc::new(AtomicBool::new(false)));
+        {
+            let (video, ffmpeg, wanted, frames, stop, ctx) =
+                (shown.video.clone(), shown.ffmpeg.clone(), wanted.clone(), frames.clone(), stop.clone(), ctx.clone());
+            std::thread::spawn(move || pictures(video, ffmpeg, wanted, frames, stop, ctx));
+        }
+        ReplayApp { shown, wanted, frames, picture: None, stop, replay, cube, clock, made: 0, playing: true, speed: 1.0, last: None }
     }
 
     /// The cube set to a time at once
@@ -82,10 +141,22 @@ impl ReplayApp {
 }
 
 impl eframe::App for ReplayApp {
+    fn on_exit(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.shown.snapshot.tick(ctx);
         self.tick(ctx.input(|i| i.time));
         self.cube.held = self.replay.orientation(self.clock);
+        *self.wanted.lock().unwrap() = self.clock;
+        if let Some(image) = self.frames.take() {
+            let picture = egui::ColorImage::from_rgba_unmultiplied([image.width, image.height], &image.data);
+            match &mut self.picture {
+                Some(texture) => texture.set(picture, egui::TextureOptions::LINEAR),
+                None => self.picture = Some(ctx.load_texture("video", picture, egui::TextureOptions::LINEAR)),
+            }
+        }
         if self.playing {
             ctx.request_repaint();
         }
@@ -178,8 +249,27 @@ impl eframe::App for ReplayApp {
             },
         );
         egui::CentralPanel::default().show(ctx, |ui| {
-            let side = ui.available_width().min(ui.available_height() * 0.62);
-            ui.vertical_centered(|ui| self.cube.show(ui, side));
+            // The video and the cube side by side, the same height
+            let height = (ui.available_height() * 0.62).min(ui.available_width() * 0.5);
+            ui.horizontal(|ui| {
+                if let Some(picture) = &self.picture {
+                    let size = picture.size_vec2();
+                    let scale = (height / size.y).min((ui.available_width() - height) / size.x).max(0.05);
+                    let (rect, _) = ui.allocate_exact_size(size * scale, egui::Sense::hover());
+                    ui.painter().image(
+                        picture.id(),
+                        rect,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                } else if let Some(error) = self.frames.error() {
+                    ui.add_sized(
+                        [ui.available_width() - height, height],
+                        egui::Label::new(egui::RichText::new(format!("The video cannot be shown: {error}")).weak()).wrap(),
+                    );
+                }
+                self.cube.show(ui, height.min(ui.available_width()));
+            });
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 9.0;
@@ -200,5 +290,5 @@ impl eframe::App for ReplayApp {
 /// Opens the replay's window; returns when it is closed
 pub fn run(shown: Shown) -> Result<()> {
     let title = format!("cubevision: {}", shown.title);
-    crate::window::run(&title, [1180.0, 700.0], |_| Box::new(ReplayApp::new(shown)))
+    crate::window::run(&title, [1280.0, 720.0], |cc| Box::new(ReplayApp::new(shown, &cc.egui_ctx)))
 }

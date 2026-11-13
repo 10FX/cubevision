@@ -243,6 +243,8 @@ fn video(args: &VideoArgs) -> Result<bool> {
     let solved = result.solved;
     if !args.json && !args.no_window && !mismatch {
         replay_window::run(replay_window::Shown {
+            video: args.video.clone(),
+            ffmpeg: args.ffmpeg.clone(),
             title: args.video.file_name().unwrap_or_default().to_string_lossy().into_owned(),
             scramble: args.scramble.clone(),
             device: device.name().to_owned(),
