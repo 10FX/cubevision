@@ -31,6 +31,8 @@ enum Command {
     Live(LiveArgs),
     /// The moves of a solve filmed, from its video and its scramble, played back on a 3D cube
     Video(VideoArgs),
+    /// Tells, without a window, whether the models run on a device and how fast, and what the camera gives
+    Check(CheckArgs),
 }
 
 #[derive(clap::Args, Default)]
@@ -46,6 +48,21 @@ struct Shared {
     /// The folder of the models (default: `models` next to the program)
     #[arg(long, env = "CUBE_MODELS")]
     models: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
+struct CheckArgs {
+    /// Seconds the models are timed, and the camera read
+    #[arg(long, default_value_t = 10.0)]
+    seconds: f64,
+    /// Also read the camera with the models, as the live mode does
+    #[arg(long)]
+    with_camera: bool,
+    /// Which camera: 0 is the system's first
+    #[arg(long, default_value_t = 0)]
+    camera: u32,
+    #[command(flatten)]
+    shared: Shared,
 }
 
 #[derive(clap::Args, Default)]
@@ -254,6 +271,13 @@ fn run() -> Result<bool> {
     match Cli::parse().command {
         Some(Command::Video(args)) => video(&args),
         Some(Command::Live(args)) => live(&args),
+        Some(Command::Check(args)) => {
+            let models = cubevision::check::models(&models_dir(&args.shared.models)?, args.shared.device, args.seconds)?;
+            if args.with_camera {
+                cubevision::check::camera(models, &CameraRequest { index: args.camera, ..CameraRequest::default() }, args.seconds)?;
+            }
+            Ok(true)
+        }
         None => live(&LiveArgs { width: 1280, height: 720, fps: 30, ..LiveArgs::default() }),
     }
 }

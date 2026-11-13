@@ -140,7 +140,9 @@ back to the CPU.
 ## Running it
 
 On Windows the release's zip holds everything: `live.bat` (the models on any GPU with DirectML),
-`live-openvino.bat` (an Intel GPU with OpenVINO), `live-cpu.bat`, and a `README.txt`.
+`live-openvino.bat` (an Intel GPU with OpenVINO), `live-cpu.bat`, a `README.txt`, and `test.bat`, which
+tries every engine and the camera and writes what each gives, or its error, to `results.txt`
+(`cubevision check --device … [--with-camera]` from the sources).
 
 From the sources, with Rust 1.92 or later, the released models and an ONNX Runtime library
 (the [prototype's requirements](#requirements) install one):
