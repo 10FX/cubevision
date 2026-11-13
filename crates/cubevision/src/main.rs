@@ -33,6 +33,12 @@ enum Command {
     Video(VideoArgs),
     /// Tells, without a window, whether the models run on a device and how fast, and what the camera gives
     Check(CheckArgs),
+    /// Downloads the released models into the models' folder, and checks them
+    FetchModels(FetchArgs),
+    /// Times each step on a video: capture, detector, crops, reader, live tracker, decoder
+    Bench(BenchArgs),
+    /// Scores a video's reconstruction against the truth of a synthetic solve
+    Eval(EvalArgs),
 }
 
 #[derive(clap::Args, Default)]
@@ -48,6 +54,42 @@ struct Shared {
     /// The folder of the models (default: `models` next to the program)
     #[arg(long, env = "CUBE_MODELS")]
     models: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
+struct FetchArgs {
+    /// The folder to fill (default: `models` next to the program)
+    #[arg(long, env = "CUBE_MODELS")]
+    models: Option<PathBuf>,
+    /// Where the models' zip is
+    #[arg(long, default_value = cubevision::fetch::URL)]
+    url: String,
+}
+
+#[derive(clap::Args)]
+struct BenchArgs {
+    /// A video of a solve
+    video: PathBuf,
+    /// Its scramble
+    #[arg(long)]
+    scramble: String,
+    #[arg(long, default_value = "ffmpeg")]
+    ffmpeg: String,
+    #[command(flatten)]
+    shared: Shared,
+}
+
+#[derive(clap::Args)]
+struct EvalArgs {
+    /// A synthetic solve's video
+    video: PathBuf,
+    /// Its truth (default: the video's name with .truth.json)
+    #[arg(long)]
+    truth: Option<PathBuf>,
+    #[arg(long, default_value = "ffmpeg")]
+    ffmpeg: String,
+    #[command(flatten)]
+    shared: Shared,
 }
 
 #[derive(clap::Args)]
@@ -276,6 +318,18 @@ fn run() -> Result<bool> {
     match Cli::parse().command {
         Some(Command::Video(args)) => video(&args),
         Some(Command::Live(args)) => live(&args),
+        Some(Command::FetchModels(args)) => {
+            cubevision::fetch::fetch(&models_dir(&args.models)?, &args.url)?;
+            Ok(true)
+        }
+        Some(Command::Bench(args)) => {
+            cubevision::tools::bench(&args.video, &args.scramble, &args.ffmpeg, load(&args.shared)?)?;
+            Ok(true)
+        }
+        Some(Command::Eval(args)) => {
+            let truth = args.truth.clone().unwrap_or_else(|| args.video.with_extension("truth.json"));
+            cubevision::tools::eval(&args.video, &truth, &args.ffmpeg, load(&args.shared)?)
+        }
         Some(Command::Check(args)) => {
             let models = cubevision::check::models(&models_dir(&args.shared.models)?, args.shared.device, args.seconds)?;
             if args.with_camera {

@@ -11,7 +11,7 @@ use (timer, reconstructions, community), use ChronoCube.
 > **Status: early, and it runs.** The two modes exist: `cubevision live` writes the moves you make in
 > front of the camera on a 3D cube, and `cubevision video` finds the moves of a filmed solve and plays
 > them back. Underneath, five crates rewrite ChronoCube's vision in Rust and are checked against it.
-> Still to come: the training code, benchmarks and CI; the [roadmap](#roadmap) says what comes in which order.
+> Still to come: a larger reader for the PC; the [roadmap](#roadmap) says what comes in which order.
 >
 > **Try it on Windows in two minutes:** download `cubevision-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
@@ -144,20 +144,39 @@ On Windows the release's zip holds everything: `live.bat` (the models on any GPU
 tries every engine and the camera and writes what each gives, or its error, to `results.txt`
 (`cubevision check --device … [--with-camera]` from the sources).
 
-From the sources, with Rust 1.92 or later, the released models and an ONNX Runtime library
-(the [prototype's requirements](#requirements) install one):
+From the sources, with Rust 1.92 or later and an ONNX Runtime library (the
+[prototype's requirements](#requirements) install one):
 
 ```sh
-export CUBE_MODELS=<folder of cubevision-models-v7>
 export ORT_DYLIB_PATH=<libonnxruntime.so or onnxruntime.dll>
+export CUBE_MODELS=$PWD/models
+cargo run --release -p cubevision -- fetch-models              # the released models, downloaded and checked
 cargo run --release -p cubevision -- live                      # the camera; R starts again
 cargo run --release -p cubevision -- video solve.mp4 --scramble "R U R' U'"
 cargo run --release -p cubevision -- video solve.mp4 --scramble "…" --json
+cargo run --release -p cubevision -- bench solve.mp4 --scramble "…"    # the time of each step
+cargo run --release -p cubevision -- eval synth.mp4            # against synth.truth.json, a synthetic solve's truth
+cargo run --release -p cubevision -- check --device cuda       # do the models run there, and how fast
 ```
 
 `--device cpu|cuda|directml|openvino-cpu|openvino-gpu|openvino-npu` chooses where the models run; without
 it the first that works is taken, and the window says which. The video mode needs ffmpeg 5.1 or later in
 the PATH. Its exit code is 0 for a solve followed to a solved cube, 2 when it could not be, 1 for an error.
+
+`bench` on a synthetic 1280×720 solve of 392 frames, on CUDA (RTX 5060 Ti, WSL2), one run:
+
+| Step | ms a frame |
+|---|---|
+| capture (ffmpeg, decoding) | 1.54 |
+| detector (letterbox, model) | 6.03 |
+| crops | 0.17 |
+| reader (model) | 1.66 |
+| reading, in all | 9.39: 106 frames a second, 3.5 times the video's rate |
+| live tracker | 0.12 |
+| video decoder (search) | 4.74 (1.9 s for the solve) |
+
+`eval` on the same video: the 58 quarter turns played all found, 27 ms from the truth in the median, the
+CFOP steps' ends within 175 ms.
 
 **Live.** The camera's picture is shown as in a mirror, with a frame around the cube: green when faces
 are read, yellow when the cube is only seen. Moves seen but not settled yet are written in grey; ten
@@ -441,6 +460,8 @@ crates/cube-infer/        the two models, the hardware, the cube's box and crops
 crates/cube-capture/      frames from a video file or a camera
 crates/cube-view/         the cube drawn in 3D and played move by move, for an egui window
 crates/cubevision/        the program: live mode, video mode, their windows
+training/                 how the models are made: Blender renders, training, export (Python)
+.github/workflows/        CI: the tests on Linux and Windows, format, lint; the training tests
 docs/superpowers/specs/   the design (in French): modes, architecture, models, tests
 docs/superpowers/plans/   the plan of each step
 spikes/capture-infer/     the prototype: models, video and webcam from Rust, with its results
@@ -480,7 +501,8 @@ All six exist.
 3. ~~`cube-infer` and `cube-capture`.~~ Done; the camera on Linux still to try on a real one.
 4. ~~Video mode in JSON, compared with the web app on the same synthetic videos.~~ Done.
 5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done.
-6. `training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.
+6. ~~`training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.~~ Done;
+   see [training/README.md](training/README.md).
 7. A larger reader for the PC, trained on renders only.
 
 ## Licence
