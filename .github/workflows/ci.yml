@@ -51,7 +51,7 @@ jobs:
         run: |
           uv venv
           uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          uv pip install numpy pillow pyyaml timm onnx onnxruntime onnxscript onnxconverter-common pytest ruff
+          uv pip install numpy pillow pyyaml tensorboard timm onnx onnxruntime onnxscript onnxconverter-common pytest ruff
       - name: Lint
         run: uv run --no-sync ruff check .
       - name: Tests
