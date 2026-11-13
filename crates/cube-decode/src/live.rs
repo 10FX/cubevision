@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use cube_core::{Cube, FACES, invert_alg, js_space, parse_move};
 
 use crate::reading::{FaceReading, Reading, State};
-use crate::state::{MOVES, apply_move, hash_of, score, scorer, state_of};
+use crate::state::{MOVES, apply_move, hash_of, score, score_turned, scorer, state_of};
 
 /// The live tracker keeps the misreading rate it was tuned with (the video search's was raised to 0.5)
 const LIVE_MISREAD: f64 = 0.15;
@@ -62,11 +62,14 @@ pub struct TrackerOptions {
     /// States the cube may jump to in one frame, whatever turns lead there, e.g. the next ones of a scramble turned
     /// faster than the camera could follow (the turns given lead from the start)
     pub anchors: Option<Anchors>,
+    /// Heed what the reader tells of each face's rotation (`FaceReading::rotation`). ChronoCube's live tracker
+    /// does not (false): it reads every face up to a rotation, and tells some turns apart only later.
+    pub ordered: bool,
 }
 
 impl Default for TrackerOptions {
     fn default() -> Self {
-        TrackerOptions { move_cost: 4.0, beam: 24, jump_cost: 12.0, bonus: None, anchors: None }
+        TrackerOptions { move_cost: 4.0, beam: 24, jump_cost: 12.0, bonus: None, anchors: None, ordered: false }
     }
 }
 
@@ -115,6 +118,17 @@ impl LiveTracker {
         }
     }
 
+    /// How many of the likeliest state's first turns every state within `margin` of it (log-likelihood) begins
+    /// with: the turns no serious rival disputes
+    pub fn agreed(&self, margin: f64) -> usize {
+        let head = &self.beam[0];
+        self.beam[1..]
+            .iter()
+            .filter(|h| h.score >= head.score - margin)
+            .map(|h| h.moves.iter().zip(&head.moves).take_while(|(a, b)| a == b).count())
+            .fold(head.moves.len(), usize::min)
+    }
+
     /// One frame's readings (empty: nothing could be read)
     pub fn update(&mut self, faces: &[FaceReading]) {
         if faces.is_empty() {
@@ -122,7 +136,9 @@ impl LiveTracker {
             return;
         }
         // Sanitized first, as the decoder's readings (a NaN: not seen): a NaN score would rank the hypotheses at random
-        let faces = faces.iter().cloned().map(FaceReading::sanitized).collect();
+        let faces: Vec<FaceReading> = faces.iter().cloned().map(FaceReading::sanitized).collect();
+        let turns: Option<Vec<Option<[f64; 4]>>> =
+            self.o.ordered.then(|| faces.iter().map(|f| f.rotation.map(|rot| rot.map(|p| (p as f64).max(1e-6).ln()))).collect());
         let prepared = scorer(&Reading { from: 0.0, to: 0.0, faces, moved: None }, LIVE_MISREAD);
         let move_cost = self.o.move_cost;
         // Hypotheses in the order first offered (a Map's), the best score for each state
@@ -135,7 +151,11 @@ impl LiveTracker {
                 Some(bonus) if cost > 0.0 => bonus(&state),
                 _ => 0.0,
             };
-            let total = from - cost + gain + score(&state, &prepared, None);
+            let fit = match &turns {
+                Some(turns) => score_turned(&state, &prepared, turns),
+                None => score(&state, &prepared, None),
+            };
+            let total = from - cost + gain + fit;
             match index.get(&key) {
                 Some(&i) => {
                     if next[i].score < total {

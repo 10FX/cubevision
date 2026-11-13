@@ -158,3 +158,85 @@ fn with_the_orientation_read_the_cube_turns_as_in_the_hands() {
     }
     assert!(moved > 0.5, "the cube never turns: {moved}");
 }
+
+#[test]
+fn stepping_goes_turn_by_turn_even_when_two_end_together() {
+    use cubevision::replay::{Change, Playback};
+    // Two pairs of turns end at the same time, as the decoder gives for turns it cannot tell apart in time
+    let turns: Vec<String> = "R U R' U' F D".split(' ').map(String::from).collect();
+    let replay = Replay::of(Cube::solved(), turns, vec![1000.0, 1000.0, 1500.0, 2000.0, 2000.0, 2600.0]);
+    let mut play = Playback::new(&replay);
+    assert_eq!((play.made, play.playing), (0, true));
+    // Forward to the end, one turn a step
+    for made in 1..=6 {
+        assert_eq!(play.step(&replay, true), Change::Play(made - 1..made));
+        assert_eq!((play.made, play.playing), (made, false));
+    }
+    assert_eq!(play.step(&replay, true), Change::Nothing);
+    // And back to the start, one turn a step
+    for made in (0..6).rev() {
+        assert_eq!(play.step(&replay, false), Change::Set(made), "back to {made}");
+        assert_eq!(play.made, made);
+    }
+    assert_eq!(play.step(&replay, false), Change::Nothing);
+    assert_eq!(play.clock, replay.span().0);
+}
+
+#[test]
+fn playing_hands_over_the_turns_as_their_time_comes() {
+    use cubevision::replay::{Change, Playback};
+    let turns: Vec<String> = "R U R' U'".split(' ').map(String::from).collect();
+    let replay = Replay::of(Cube::solved(), turns, vec![1000.0, 1000.0, 1500.0, 2000.0]);
+    let (from, to) = replay.span();
+    let mut play = Playback::new(&replay);
+    let mut handed = Vec::new();
+    let mut frames = 0;
+    while play.playing {
+        // A window hidden for ten seconds: the clock moves by a tenth of a second at most
+        if let Change::Play(turns) = play.tick(&replay, if frames == 3 { 10.0 } else { 0.016 }) {
+            handed.extend(turns);
+        }
+        frames += 1;
+        assert!(frames < 10_000, "the replay never ends");
+    }
+    assert_eq!(handed, [0, 1, 2, 3]);
+    assert_eq!((play.clock, play.made), (to, 4));
+    assert!(frames > 100, "ten seconds were taken at once: {frames} frames");
+    // Paused, nothing moves; at half speed, half as far
+    assert_eq!(play.tick(&replay, 0.05), Change::Nothing);
+    assert_eq!(play.seek(&replay, from - 500.0), Change::Set(0));
+    assert_eq!(play.clock, from);
+    play.playing = true;
+    play.speed = 0.5;
+    play.tick(&replay, 0.05);
+    assert!((play.clock - from - 25.0).abs() < 1e-9);
+    assert_eq!(play.seek(&replay, 1200.0), Change::Set(2));
+    assert_eq!(play.seek(&replay, 1e9), Change::Set(4));
+}
+
+#[test]
+fn a_result_for_another_scramble_is_not_given_as_a_solve() {
+    let result = analyze_readings(&frames(), SCRAMBLE, &AnalyzeOptions::default()).unwrap();
+    let given = cubevision::json::result(&result, false);
+    assert_eq!(given["scrambleMismatch"], false);
+    assert!(given["moves"].as_array().unwrap().len() >= 8 && given["solution"].is_string() && given["reconstruction"]["steps"].is_array());
+    let withheld = cubevision::json::result(&result, true);
+    assert_eq!(withheld["scrambleMismatch"], true);
+    for invented in ["solution", "moves", "reconstruction", "rotations", "gaps"] {
+        assert!(withheld[invented].is_null(), "{invented} is given: {}", withheld[invented]);
+    }
+    // What was measured stays
+    assert!(withheld["agreement"].is_number() && withheld["frames"].is_number() && withheld["solved"].is_boolean());
+}
+
+#[test]
+fn another_scramble_is_told_from_a_solve_hard_to_follow() {
+    // The video's own scramble: solved, no mismatch
+    let own = analyze_readings(&frames(), SCRAMBLE, &AnalyzeOptions::default()).unwrap();
+    assert!(own.solved && !cubevision::json::mismatch(&own));
+    assert!(cubevision::json::start_agreement(&own).unwrap() > 0.9);
+    // Another scramble: the cube it gives is not the one the first frames show
+    let other = analyze_readings(&frames(), "F R U B2 D' L F2", &AnalyzeOptions::default()).unwrap();
+    assert!(!other.solved);
+    assert!(cubevision::json::mismatch(&other), "start {:?}, whole {}", cubevision::json::start_agreement(&other), other.agreement);
+}

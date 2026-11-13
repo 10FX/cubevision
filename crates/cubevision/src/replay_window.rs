@@ -11,7 +11,7 @@ use cube_decode::pipeline::VisionResult;
 use cube_view::CubeView;
 use eframe::egui;
 
-use crate::replay::Replay;
+use crate::replay::{Change, Playback, Replay};
 use crate::window::{Snapshot, token};
 
 /// What the window shows besides the result itself
@@ -76,11 +76,8 @@ struct ReplayApp {
     stop: Arc<AtomicBool>,
     replay: Replay,
     cube: CubeView,
-    /// The video's time now, ms, and the moves the cube has been handed
-    clock: f64,
-    made: usize,
-    playing: bool,
-    speed: f64,
+    /// Where the replay stands
+    play: Playback,
     last: Option<f64>,
 }
 
@@ -95,48 +92,35 @@ impl ReplayApp {
                 (shown.video.clone(), shown.ffmpeg.clone(), wanted.clone(), frames.clone(), stop.clone(), ctx.clone());
             std::thread::spawn(move || pictures(video, ffmpeg, wanted, frames, stop, ctx));
         }
-        ReplayApp { shown, wanted, frames, picture: None, stop, replay, cube, clock, made: 0, playing: true, speed: 1.0, last: None }
+        ReplayApp { shown, wanted, frames, picture: None, stop, play: Playback::new(&replay), replay, cube, last: None }
+    }
+
+    /// The cube does what the playback's move asks
+    fn show(&mut self, change: Change) {
+        match change {
+            Change::Nothing => {}
+            Change::Play(turns) => self.replay.turns[turns].iter().for_each(|t| self.cube.play(t)),
+            Change::Set(made) => self.cube.set(self.replay.cube_at(made)),
+        }
     }
 
     /// The cube set to a time at once
     fn seek(&mut self, clock: f64) {
-        let (from, to) = self.replay.span();
-        self.clock = clock.clamp(from, to);
-        self.made = self.replay.moves_at(self.clock);
-        self.cube.set(self.replay.cube_at(self.made));
+        let change = self.play.seek(&self.replay, clock);
+        self.show(change);
     }
 
     /// One move forward (played) or back (at once)
     fn step(&mut self, forward: bool) {
-        self.playing = false;
-        if forward && self.made < self.replay.len() {
-            self.cube.play(&self.replay.turns[self.made]);
-            self.made += 1;
-            self.clock = self.replay.time_of(self.made);
-        } else if !forward && self.made > 0 {
-            self.seek(self.replay.time_of(self.made - 1));
-            if self.made > 0 {
-                // Just after the move before, not on the one undone
-                self.clock = self.replay.time_of(self.made);
-            }
-        }
+        let change = self.play.step(&self.replay, forward);
+        self.show(change);
     }
 
     fn tick(&mut self, now: f64) {
         let elapsed = self.last.map_or(0.0, |last| now - last);
         self.last = Some(now);
-        if !self.playing {
-            return;
-        }
-        self.clock += elapsed * 1000.0 * self.speed;
-        let due = self.replay.moves_at(self.clock);
-        for turn in &self.replay.turns[self.made.min(due)..due] {
-            self.cube.play(turn);
-        }
-        self.made = self.made.max(due);
-        if self.clock >= self.replay.span().1 {
-            self.playing = false;
-        }
+        let change = self.play.tick(&self.replay, elapsed);
+        self.show(change);
     }
 }
 
@@ -148,8 +132,8 @@ impl eframe::App for ReplayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.shown.snapshot.tick(ctx);
         self.tick(ctx.input(|i| i.time));
-        self.cube.held = self.replay.orientation(self.clock);
-        *self.wanted.lock().unwrap() = self.clock;
+        self.cube.held = self.replay.orientation(self.play.clock);
+        *self.wanted.lock().unwrap() = self.play.clock;
         if let Some(image) = self.frames.take() {
             let picture = egui::ColorImage::from_rgba_unmultiplied([image.width, image.height], &image.data);
             match &mut self.picture {
@@ -157,7 +141,7 @@ impl eframe::App for ReplayApp {
                 None => self.picture = Some(ctx.load_texture("video", picture, egui::TextureOptions::LINEAR)),
             }
         }
-        if self.playing {
+        if self.play.playing {
             ctx.request_repaint();
         }
         let (space, left, right) =
@@ -171,12 +155,12 @@ impl eframe::App for ReplayApp {
         egui::TopBottomPanel::bottom("bar").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let restart = !self.playing && self.clock >= to;
-                if ui.button(if self.playing { "Pause" } else { "Play" }).clicked() || space {
+                let restart = !self.play.playing && self.play.clock >= to;
+                if ui.button(if self.play.playing { "Pause" } else { "Play" }).clicked() || space {
                     if restart {
                         self.seek(from);
                     }
-                    self.playing = !self.playing;
+                    self.play.playing = !self.play.playing;
                 }
                 if ui.button("◀ move").clicked() {
                     self.step(false);
@@ -185,16 +169,16 @@ impl eframe::App for ReplayApp {
                     self.step(true);
                 }
                 for speed in [0.25, 0.5, 1.0] {
-                    if ui.selectable_label(self.speed == speed, format!("×{speed}")).clicked() {
-                        self.speed = speed;
+                    if ui.selectable_label(self.play.speed == speed, format!("×{speed}")).clicked() {
+                        self.play.speed = speed;
                     }
                 }
-                let mut clock = self.clock;
+                let mut clock = self.play.clock;
                 ui.spacing_mut().slider_width = (ui.available_width() - 90.0).max(120.0);
                 if ui.add(egui::Slider::new(&mut clock, from..=to).show_value(false)).changed() {
                     self.seek(clock);
                 }
-                ui.label(format!("{:.2} s", (self.clock - solve_start).max(0.0) / 1000.0));
+                ui.label(format!("{:.2} s", (self.play.clock - solve_start).max(0.0) / 1000.0));
             });
             ui.add_space(4.0);
         });
@@ -275,8 +259,8 @@ impl eframe::App for ReplayApp {
                     ui.spacing_mut().item_spacing.x = 9.0;
                     for (i, moves) in self.replay.written.iter().enumerate() {
                         let colour = match i + 1 {
-                            n if n == self.made => egui::Color32::from_rgb(80, 220, 120),
-                            n if n < self.made => ui.visuals().strong_text_color(),
+                            n if n == self.play.made => egui::Color32::from_rgb(80, 220, 120),
+                            n if n < self.play.made => ui.visuals().strong_text_color(),
                             _ => ui.visuals().weak_text_color(),
                         };
                         moves.iter().for_each(|t| token(ui, t, colour));

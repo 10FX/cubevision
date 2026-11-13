@@ -70,6 +70,12 @@ impl Replay {
         }
     }
 
+    /// A replay of plain turns, without an orientation: the cube they start from, each turn and when it ends
+    pub fn of(start: Cube, turns: Vec<String>, times: Vec<f64>) -> Self {
+        let written = turns.iter().map(|t| vec![t.clone()]).collect();
+        Replay { start, turns, written, times, held: [1.0, 0.0, 0.0, 0.0], track: None }
+    }
+
     pub fn len(&self) -> usize {
         self.times.len()
     }
@@ -99,5 +105,78 @@ impl Replay {
     /// The time just after turn `moves` (0: the start)
     pub fn time_of(&self, moves: usize) -> f64 {
         if moves == 0 { self.span().0 } else { self.times[moves.min(self.len()) - 1] }
+    }
+}
+
+/// What the cube on screen must do after the playback moved
+#[derive(Clone, Debug, PartialEq)]
+pub enum Change {
+    Nothing,
+    /// Play these turns (indices into `Replay::turns`), one after the other
+    Play(std::ops::Range<usize>),
+    /// Show the cube as it is after this many turns, at once
+    Set(usize),
+}
+
+/// Where the replay stands: the video's time, the turns made, whether it runs and how fast
+#[derive(Clone, Debug, PartialEq)]
+pub struct Playback {
+    /// The video's time now, ms
+    pub clock: f64,
+    /// The turns the cube has been handed
+    pub made: usize,
+    pub playing: bool,
+    /// 1: as filmed
+    pub speed: f64,
+}
+
+/// The longest time one frame of the window moves the clock by, seconds: a window hidden for a while does not
+/// throw every turn missed at the cube when it comes back
+const LONGEST_FRAME: f64 = 0.1;
+
+impl Playback {
+    pub fn new(replay: &Replay) -> Self {
+        Playback { clock: replay.span().0, made: 0, playing: true, speed: 1.0 }
+    }
+
+    /// To a time of the video, at once
+    pub fn seek(&mut self, replay: &Replay, clock: f64) -> Change {
+        let (from, to) = replay.span();
+        self.clock = clock.clamp(from, to);
+        self.made = replay.moves_at(self.clock);
+        Change::Set(self.made)
+    }
+
+    /// One turn forward (played) or back (at once), by its rank: two turns ending at the same time are still
+    /// two steps
+    pub fn step(&mut self, replay: &Replay, forward: bool) -> Change {
+        self.playing = false;
+        if forward && self.made < replay.len() {
+            self.made += 1;
+            self.clock = replay.time_of(self.made);
+            Change::Play(self.made - 1..self.made)
+        } else if !forward && self.made > 0 {
+            self.made -= 1;
+            self.clock = replay.time_of(self.made);
+            Change::Set(self.made)
+        } else {
+            Change::Nothing
+        }
+    }
+
+    /// The clock moved on by a frame of the window (`elapsed` seconds since the last): the turns now due
+    pub fn tick(&mut self, replay: &Replay, elapsed: f64) -> Change {
+        if !self.playing {
+            return Change::Nothing;
+        }
+        let end = replay.span().1;
+        self.clock = (self.clock + elapsed.clamp(0.0, LONGEST_FRAME) * 1000.0 * self.speed).min(end);
+        let due = replay.moves_at(self.clock);
+        let from = self.made.min(due);
+        self.made = self.made.max(due);
+        if self.clock >= end {
+            self.playing = false;
+        }
+        if from < due { Change::Play(from..due) } else { Change::Nothing }
     }
 }

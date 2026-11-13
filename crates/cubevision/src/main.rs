@@ -182,9 +182,7 @@ fn load(shared: &Shared) -> Result<Models> {
 }
 
 fn video(args: &VideoArgs) -> Result<bool> {
-    if args.scramble.split_whitespace().next().is_none() {
-        bail!("the scramble is empty: the moves are found from the scrambled cube");
-    }
+    cubevision::colours::scramble(&args.scramble)?;
     let hold = hold(colour(&args.top)?, colour(&args.front)?)?;
     let cross = args.cross.as_deref().map(colour).transpose()?;
     let mut source = VideoReader::open(&args.video, &VideoOptions { ffmpeg: args.ffmpeg.clone(), ..VideoOptions::default() })?;
@@ -199,7 +197,17 @@ fn video(args: &VideoArgs) -> Result<bool> {
 
     let reading = Instant::now();
     let mut batch = Vec::with_capacity(BATCH);
+    // A long video takes a while: how far the reading is, every second, on the error stream
+    let (mut told, mut count) = (Instant::now(), 0usize);
     while let Some(image) = source.next_image()? {
+        count += 1;
+        if told.elapsed().as_secs_f64() >= 1.0 {
+            told = Instant::now();
+            match info.frames {
+                Some(all) => eprintln!("reading: {count} of {all} frames"),
+                None => eprintln!("reading: {count} frames"),
+            }
+        }
         if batches {
             batch.push(image);
             if batch.len() == BATCH {
@@ -222,6 +230,7 @@ fn video(args: &VideoArgs) -> Result<bool> {
             .with_context(|| format!("writing {}", file.display()))?;
     }
 
+    eprintln!("read {count} frames in {read_seconds:.1} s; finding the moves…");
     let decoding = Instant::now();
     let options = AnalyzeOptions { hold: Some(hold.to_string()), cross, ..AnalyzeOptions::default() };
     let Some(result) = analyze_readings(&read.frames, &args.scramble, &options) else {
@@ -235,11 +244,9 @@ fn video(args: &VideoArgs) -> Result<bool> {
     let decode_seconds = decoding.elapsed().as_secs_f64();
 
     // A scramble that is not the video's: the readings fit no cube that follows from it
-    let mismatch = !result.solved && result.agreement < MISMATCH;
+    let mismatch = cubevision::json::mismatch(&result);
     let warning = if mismatch {
-        Some(
-            "the scramble does not seem to be this video's: the moves found explain too little of what was read, and are not shown as a solve",
-        )
+        Some("the scramble does not seem to be this video's: the moves found explain too little of what was read, and are not given")
     } else if !result.solved {
         Some("the moves found do not end on a solved cube: some turns could not be followed (see gaps)")
     } else {
@@ -255,7 +262,7 @@ fn video(args: &VideoArgs) -> Result<bool> {
             "warning": warning,
         });
         let fields = out.as_object_mut().unwrap();
-        for (key, value) in cubevision::json::result(&result).as_object().unwrap() {
+        for (key, value) in cubevision::json::result(&result, mismatch).as_object().unwrap() {
             fields.insert(key.clone(), value.clone());
         }
         println!("{}", serde_json::to_string_pretty(&out)?);
@@ -298,11 +305,6 @@ fn video(args: &VideoArgs) -> Result<bool> {
     }
     Ok(solved)
 }
-
-/// Below this share of the stickers read fitting the moves found, an unsolved result is taken for a scramble
-/// that is not the video's. On synthetic solves read by the released models, a wrong scramble gives 0.27 to
-/// 0.31, the right one on a solve the decoder could not finish 0.41 to 0.50.
-const MISMATCH: f64 = 0.35;
 
 fn live(args: &LiveArgs) -> Result<bool> {
     let source = match &args.source {
@@ -349,8 +351,8 @@ fn run() -> Result<bool> {
 fn main() -> ExitCode {
     match run() {
         Ok(true) => ExitCode::SUCCESS,
-        // Read, but not to a solved cube
-        Ok(false) => ExitCode::from(2),
+        // Read, but not to a solved cube (2 is the command line's own, for a usage error)
+        Ok(false) => ExitCode::from(3),
         Err(error) => {
             eprintln!("error: {error:#}");
             ExitCode::FAILURE

@@ -104,6 +104,30 @@ pub fn score(state: &State, s: &Scorer, mut rotations: Option<&mut Vec<usize>>) 
     total
 }
 
+/// As `score`, with what the reader tells of each face's rotation (`turns`: for each face of the reading, the
+/// log-probability of the 4 rotations; None: it does not tell). Two states that show the same faces up to a
+/// rotation, as a D turn and a U' turn do from the solved cube, are then told apart.
+pub fn score_turned(state: &State, s: &Scorer, turns: &[Option<[f64; 4]>]) -> f64 {
+    let keep = (1.0 - s.misread).ln();
+    let mut total = 0.0;
+    for (f, &center) in s.centers.iter().enumerate() {
+        let base = center as usize * 9;
+        let mut best = f64::NEG_INFINITY;
+        for (r, rot) in ROT.iter().enumerate() {
+            let mut sum = turns.get(f).copied().flatten().map_or(0.0, |t| t[r]);
+            for i in 0..9 {
+                let l = s.logs[(f * 9 + i) * 6 + state[base + rot[i]] as usize];
+                if !l.is_nan() {
+                    sum += l as f64;
+                }
+            }
+            best = best.max(sum);
+        }
+        total += (best + keep).max(s.garbage[f]);
+    }
+    total
+}
+
 /// Log-likelihood of a reading for a state, and the rotation of each face that explains it
 pub fn reading_score(state: &State, reading: &Reading) -> (f64, Vec<usize>) {
     let mut rotations = Vec::new();

@@ -5,8 +5,11 @@
 use crate::live::{LiveTracker, TrackerOptions};
 use crate::reading::{FaceReading, State};
 
-/// Frames a turn must stay in the likeliest state before it is written: a third of a second at 30 frames a second
+/// Frames read a turn must stay in the likeliest state before it is written: a third of a second at 30 frames a second
 pub const LAG: usize = 10;
+/// A turn is not written while a state without it is within this of the likeliest (log-likelihood): two states
+/// the frames explain alike are left open until one wins
+pub const MARGIN: f64 = 2.0;
 
 pub struct DelayedTracker {
     tracker: LiveTracker,
@@ -21,7 +24,8 @@ pub struct DelayedTracker {
 impl DelayedTracker {
     pub fn new(start: State) -> Self {
         DelayedTracker {
-            tracker: LiveTracker::new(start, TrackerOptions::default()),
+            // The reader's word on each face's rotation is heeded: without it a D turn of a solved cube reads as a U'
+            tracker: LiveTracker::new(start, TrackerOptions { ordered: true, ..TrackerOptions::default() }),
             confirmed: Vec::new(),
             ages: Vec::new(),
             last: Vec::new(),
@@ -58,6 +62,10 @@ impl DelayedTracker {
     /// One frame's readings (empty: nothing could be read); the turns this frame settles
     pub fn update(&mut self, faces: &[FaceReading]) -> Vec<usize> {
         self.tracker.update(faces);
+        // A frame where nothing is read says nothing for the turns seen before it: they do not age
+        if faces.is_empty() {
+            return Vec::new();
+        }
         let now = self.tracker.moves();
         // A turn ages while it and all those before it stay as they were
         let same = now.iter().zip(&self.last).take_while(|(a, b)| a == b).count();
@@ -65,7 +73,7 @@ impl DelayedTracker {
         self.ages.iter_mut().for_each(|age| *age += 1);
         self.ages.resize(now.len(), 0);
         self.last = now.to_vec();
-        let settled = self.ages.iter().take_while(|&&age| age >= LAG).count();
+        let settled = self.ages.iter().take_while(|&&age| age >= LAG).count().min(self.tracker.agreed(MARGIN));
         if settled == 0 {
             return Vec::new();
         }

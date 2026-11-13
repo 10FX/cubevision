@@ -27,9 +27,32 @@ pub fn hold(top: u8, front: u8) -> Result<&'static str> {
     bail!("no cube has {} on top and {} in front: they are the same face or opposite ones", COLOURS[top as usize], COLOURS[front as usize])
 }
 
+/// A scramble a cube can be turned by: at least one move, every token a move
+pub fn scramble(text: &str) -> Result<()> {
+    let mut tokens = text.split_whitespace().peekable();
+    if tokens.peek().is_none() {
+        bail!("the scramble is empty: the moves are found from the scrambled cube");
+    }
+    match tokens.find(|token| cube_core::parse_move(token).is_none()) {
+        Some(token) => bail!("the scramble holds {token:?}, which is not a move (R, U', F2, Rw, x…)"),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scramble_is_made_of_moves() {
+        assert!(scramble("R U2 F' Rw x M2 D’").is_ok());
+        assert!(scramble("  ").unwrap_err().to_string().contains("empty"));
+        for bad in ["R Q7 banana", "R U, F", "hello"] {
+            let error = scramble(bad).unwrap_err().to_string();
+            assert!(error.contains("not a move"), "{bad}: {error}");
+        }
+        assert!(scramble("R Q7 banana").unwrap_err().to_string().contains("Q7"));
+    }
 
     #[test]
     fn colours_are_named_or_lettered() {

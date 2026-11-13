@@ -161,7 +161,7 @@ cargo run --release -p cubevision -- check --device cuda       # do the models r
 
 `--device cpu|cuda|directml|openvino-cpu|openvino-gpu|openvino-npu` chooses where the models run; without
 it the first that works is taken, and the window says which. The video mode needs ffmpeg 5.1 or later in
-the PATH. Its exit code is 0 for a solve followed to a solved cube, 2 when it could not be, 1 for an error.
+the PATH. Its exit code is 0 for a solve followed to a solved cube, 3 when it could not be, 1 for an error.
 
 `bench` on a synthetic 1280×720 solve of 392 frames, on CUDA (RTX 5060 Ti, WSL2), one run:
 
@@ -180,10 +180,16 @@ CFOP steps' ends within 175 ms.
 
 **Live.** The camera's picture is shown as in a mirror, with a frame around the cube: green when faces
 are read, yellow when the cube is only seen. Moves seen but not settled yet are written in grey; ten
-frames later they turn white and never change. If the 3D cube no longer matches yours, solve your cube
+frames read later they turn white and never change. A move is not settled while another explains the
+frames as well: the tracker heeds the order in which the reader gives a face's stickers, which is what
+tells a D turn of a solved cube from a U' one. If the 3D cube no longer matches yours, solve your cube
 and press R. A slice is written as two face turns (M as R L'), a wide move as the opposite face's turn:
 faces are named by their centre, which a slice moves. WSL has no camera: under Linux the camera path is
 written but was tried on no real one.
+
+Not there yet, against the design: the replay's window has no fields of its own (the video, its scramble
+and the colours come from the command line), the reading shows its progress in the console only, and the
+live mode does not tell when it has lost the cube: it says how to start again, always.
 
 **Video, against ChronoCube.** The four synthetic solves of the decoder's fixtures, read by the same
 models (`cargo test -p cubevision --test site -- --include-ignored`, on an i5-12400F and an RTX 5060 Ti):
@@ -195,11 +201,11 @@ models (`cargo test -p cubevision --test site -- --include-ignored`, on an i5-12
 | synth-23-006 | 384 of 384: identical; not solved, as the site, same solution | not solved; 1.9 s |
 | synth-23-022 | 403 of 403: identical; solved as the site, same solution | solved; 1.9 s |
 
-Where the frames differ, the first ones are still the site's to seven digits; then the detector's box
+Where the frames differ, the first ones are still the site's to six digits; then the detector's box
 lands a few pixels away (the native engine against WebAssembly, by all appearances) and the box followed
-carries the difference on. Decoding takes 1.3 to 3.2 s more. A scramble that is not the video's is told
-apart from a solve merely hard to follow: it explains under 35 % of the stickers read (0.27 to 0.31 on
-these videos, against 0.41 to 0.50 for the right scramble on the unsolved one).
+carries the difference on. Decoding takes 1.3 to 3.2 s more. A scramble that is not the video's is told apart from a solve merely hard to follow by the first
+frames: the scrambled cube explains 63 to 86 % of their stickers with the video's own scramble, 44 % at
+most with another (the four videos, each with its scramble and four others). Its moves are then not given.
 
 **On a laptop.** An Intel Core Ultra 5 125H with Arc graphics and its built-in camera (MJPEG 1280×720 at
 30 fps), from `test.bat` with a cube in hand, then the live mode tried and found to follow the moves:

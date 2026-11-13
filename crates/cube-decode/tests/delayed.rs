@@ -87,3 +87,88 @@ fn what_is_written_never_changes_on_the_videos() {
         assert!(written.len() >= 20, "{name}: {} moves written", written.len());
     }
 }
+
+fn index(token: &str) -> usize {
+    MOVES.iter().position(|&m| m == token).unwrap()
+}
+
+/// A sequence turned in front of the camera from the solved cube, each state seen 14 frames; `ordered`: the
+/// reader tells that the stickers come in the cube's order (faces read together), as the trained reader does
+fn turned(tokens: &str, ordered: bool) -> DelayedTracker {
+    let mut tracker = DelayedTracker::new(solved_state());
+    let mut state = solved_state();
+    let show = |tracker: &mut DelayedTracker, state: &State| {
+        for _ in 0..14 {
+            let mut faces = sure(state);
+            if !ordered {
+                faces.iter_mut().for_each(|f| f.rotation = None);
+            }
+            tracker.update(&faces);
+        }
+    };
+    show(&mut tracker, &state);
+    for token in tokens.split(' ') {
+        state = apply_move(&state, index(token));
+        show(&mut tracker, &state);
+    }
+    tracker
+}
+
+#[test]
+fn any_first_move_is_written_as_it_was_turned() {
+    // From the solved cube a D turn and a U' turn show the same faces up to a rotation of each: only the order
+    // of the stickers tells them apart
+    for (m, token) in MOVES.iter().enumerate() {
+        let tracker = turned(token, true);
+        assert_eq!((tracker.confirmed(), tracker.pending()), (&[m][..], &[][..]), "{token}");
+        assert_eq!(tracker.state(), &apply_move(&solved_state(), m), "{token}");
+    }
+}
+
+#[test]
+fn sequences_that_start_on_any_face_are_followed() {
+    for tokens in ["D R U R' U'", "L U R U' R'", "B R U F", "R U R' U' D R U", "D D L' B2 U F' D'"] {
+        let tracker = turned(tokens, true);
+        let want = tokens.split(' ').fold(solved_state(), |s, t| apply_move(&s, index(t)));
+        assert_eq!(tracker.state(), &want, "{tokens}: on another cube");
+        assert_eq!(
+            after(&solved_state(), tracker.confirmed()),
+            want,
+            "{tokens}: written {:?}",
+            tracker.confirmed().iter().map(|&m| MOVES[m]).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn a_move_two_states_explain_alike_is_not_written_until_one_wins() {
+    // A reader that does not tell the stickers' order: D and U' are one and the same to it
+    let d = index("D");
+    let mut tracker = turned("D", false);
+    for _ in 0..40 {
+        let mut faces = sure(&apply_move(&solved_state(), d));
+        faces.iter_mut().for_each(|f| f.rotation = None);
+        tracker.update(&faces);
+    }
+    assert!(tracker.confirmed().is_empty(), "a tie was written: {:?}", tracker.confirmed());
+    assert_eq!(tracker.pending().len(), 1);
+}
+
+#[test]
+fn frames_where_nothing_is_read_do_not_settle_a_move() {
+    let r = index("R");
+    let mut tracker = DelayedTracker::new(solved_state());
+    for _ in 0..5 {
+        tracker.update(&sure(&solved_state()));
+    }
+    // One frame misread as an R, then the hands hide the cube
+    tracker.update(&sure(&apply_move(&solved_state(), r)));
+    for _ in 0..30 {
+        assert!(tracker.update(&[]).is_empty());
+    }
+    assert!(tracker.confirmed().is_empty(), "{:?}", tracker.confirmed());
+    for _ in 0..20 {
+        tracker.update(&sure(&solved_state()));
+    }
+    assert_eq!((tracker.confirmed(), tracker.pending()), (&[][..], &[][..]));
+}
