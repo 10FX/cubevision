@@ -31,6 +31,8 @@ enum Command {
     Live(LiveArgs),
     /// The moves of a solve filmed, from its video and its scramble, played back on a 3D cube
     Video(VideoArgs),
+    /// Asks for moves from a solved cube and saves the camera's crops of it, labelled with the cube's state
+    Label(LabelArgs),
     /// Tells, without a window, whether the models run on a device and how fast, and what the camera gives
     Check(CheckArgs),
     /// Downloads the released models into the models' folder, and checks them
@@ -54,6 +56,26 @@ struct Shared {
     /// The folder of the models (default: `models` next to the program)
     #[arg(long, env = "CUBE_MODELS")]
     models: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
+struct LabelArgs {
+    /// The session's folder (default: cubevision-labels/session-<time> in the current folder)
+    #[arg(long)]
+    out: Option<PathBuf>,
+    /// Where and how it is filmed (the room, the light, the cube), kept with the images
+    #[arg(long, default_value = "")]
+    note: String,
+    /// Moves that scramble in a sequence (as many undo them)
+    #[arg(long, default_value_t = 20)]
+    length: usize,
+    /// The moves asked for come from it (default: the time)
+    #[arg(long)]
+    seed: Option<u64>,
+    #[arg(long, hide = true)]
+    auto: Option<f64>,
+    #[command(flatten)]
+    camera: LiveArgs,
 }
 
 #[derive(clap::Args)]
@@ -316,10 +338,33 @@ fn live(args: &LiveArgs) -> Result<bool> {
     Ok(true)
 }
 
+fn label(args: &LabelArgs) -> Result<bool> {
+    let live = &args.camera;
+    let source = match &live.source {
+        Some(video) => Source::Video(video.clone()),
+        None => Source::Camera(CameraRequest { index: live.camera, width: live.width, height: live.height, fps: live.fps }),
+    };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let out = args.out.clone().unwrap_or_else(|| PathBuf::from("cubevision-labels").join(format!("session-{now}")));
+    cubevision::label_window::run(cubevision::label_window::LabelOptions {
+        source,
+        models: models_dir(&live.shared.models)?,
+        device: live.shared.device,
+        out,
+        seed: args.seed.unwrap_or(now),
+        length: args.length,
+        note: args.note.clone(),
+        auto: args.auto,
+        snapshot: Snapshot::new(live.shared.screenshot.clone(), live.shared.after),
+    })?;
+    Ok(true)
+}
+
 fn run() -> Result<bool> {
     match Cli::parse().command {
         Some(Command::Video(args)) => video(&args),
         Some(Command::Live(args)) => live(&args),
+        Some(Command::Label(args)) => label(&args),
         Some(Command::FetchModels(args)) => {
             cubevision::fetch::fetch(&models_dir(&args.models)?, &args.url)?;
             Ok(true)

@@ -157,6 +157,7 @@ cargo run --release -p cubevision -- video solve.mp4 --scramble "…" --json
 cargo run --release -p cubevision -- bench solve.mp4 --scramble "…"    # the time of each step
 cargo run --release -p cubevision -- eval synth.mp4            # against synth.truth.json, a synthetic solve's truth
 cargo run --release -p cubevision -- check --device cuda       # do the models run there, and how fast
+cargo run --release -p cubevision -- label --note "desk, daylight"     # labelled images of a real cube
 ```
 
 `--device cpu|cuda|directml|openvino-cpu|openvino-gpu|openvino-npu` chooses where the models run; without
@@ -498,7 +499,29 @@ The apps are a Rust workspace, one crate per job, each knowing nothing of the on
 | `cube-view` | the 3D cube and the window |
 | `cubevision` | the program and its commands |
 
-All six exist.
+All seven exist.
+
+### Labelling real images
+
+The released readers are trained on rendered images only, and real footage is where they read worst. `cubevision
+label` (`label.bat` in the zip) makes labelled images of a real cube without reading it: from a solved cube, the
+program asks for one move at a time, the user makes it and presses Space, so the cube's state is known at every
+frame.
+
+- A sequence is 20 random moves, then the 20 that undo them. A cube solved at the end tells that every move was
+  made as asked; otherwise X sets the sequence aside. Backspace takes the last move back.
+- After each press the cube is only shown for 1.5 s (tilted, closer, another corner): those frames have the
+  state for sure. Then the next move is asked for: its frames show the state before, the layer turning, or the
+  state after.
+- Only the square around the cube is saved (256 px JPEG), never the whole picture.
+- A session's folder (`cubevision-labels/session-…`) holds `images/` and `log.jsonl`: one record for each
+  image (the cube's 54 colours, the move on its way, what the reader made of the crop) and for each press, move
+  taken back and sequence ended.
+- The reader's opinion is shown (how many of the stickers it reads are as the state has them) but decides
+  nothing: a session can be recorded with a reader that reads badly.
+
+The images are not training data yet: the reader learns a face's stickers only where the cube's orientation is
+known, and telling it from these records is the next step.
 
 ## Roadmap
 
@@ -509,7 +532,10 @@ All six exist.
 5. ~~`cube-view`: 3D cube, live mode, replay.~~ Done.
 6. ~~`training/` (Blender renders, training, export), `cubevision bench`, `cubevision fetch-models`, CI.~~ Done;
    see [training/README.md](training/README.md).
-7. A larger reader for the PC, trained on renders only.
+7. A larger reader for the PC, trained on renders only: v8 (`training/configs/v8.yaml`, MobileNetV4-conv-large at
+   256 px) is trained and reads 87.9 % of the quarter turns of 26 synthetic solves exactly, where v7 reads 83.5 %;
+   not released yet, nor tried on real footage.
+8. Real images labelled by `cubevision label`, and a reader trained on them.
 
 ## Licence
 

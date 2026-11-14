@@ -1,0 +1,42 @@
+# The reader v8, for a PC's GPU (make train-v8), from ImageNet weights and on renders only: MobileNetV4-conv-large
+# (timm) at 256 px, the renders' own size, a wider and deeper decoder; every render made since v6 (the solve stages
+# twice), with v7c's harder pictures (blurred wider, out of focus more often and further). No real frame.
+model:
+  backbone: mobilenetv4_conv_large
+  image_size: 256
+  dim: 256
+  heads: 8
+  layers: 4
+  token_stride: 8
+  colour_tokens: true
+  geometric: true
+  symmetric: true
+data:
+  train: [data/synth/train2, data/synth/train3, data/synth/train-v7, data/synth/train-v7, data/synth/train-v7b, data/synth/train-v7c]
+  val: [data/synth/val-v7, data/synth/val]
+  workers: 6
+train:
+  name: reader-v8
+  epochs: 10
+  batch_size: 96
+  lr: 0.00075
+  backbone_lr_scale: 0.3
+  amp: bf16
+  channels_last: true
+  teach_start: 0.3
+  teach_end: 0.3
+augment:
+  saturation: 0.5
+  blur_p: 0.45
+  blur_sigma: [0.3, 4.0]
+  motion_p: 0.6
+  motion_length: [3, 31]
+  defocus_p: 0.5
+  defocus_radius: [1.0, 7.0]
+  lowres_p: 0.5
+  lowres_scale: [0.12, 0.8]
+  jpeg_p: 0.5
+  jpeg_quality: [8.0, 90.0]
+  flicker_p: 0.1
+  overexpose_p: 0.15
+  recompress_p: 0.15

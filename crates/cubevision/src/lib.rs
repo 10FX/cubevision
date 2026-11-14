@@ -5,6 +5,8 @@ pub mod check;
 pub mod colours;
 pub mod fetch;
 pub mod json;
+pub mod label;
+pub mod label_window;
 pub mod live;
 pub mod read;
 pub mod replay;

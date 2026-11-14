@@ -66,13 +66,13 @@ struct Shared {
     dropped: u64,
 }
 
-struct Frames {
+pub(crate) struct Frames {
     camera: Option<Camera>,
     video: Option<(VideoReader, Instant)>,
 }
 
 impl Frames {
-    fn open(source: &Source) -> Result<(Frames, String)> {
+    pub(crate) fn open(source: &Source) -> Result<(Frames, String)> {
         match source {
             Source::Camera(request) => {
                 let camera = Camera::open(request)?;
@@ -91,7 +91,7 @@ impl Frames {
 
     /// The next frame to read: the camera's latest, or the video's next one when its time has come.
     /// None: none yet (or the video is over).
-    fn next(&mut self) -> Result<Option<Image>> {
+    pub(crate) fn next(&mut self) -> Result<Option<Image>> {
         if let Some(camera) = &self.camera {
             return camera.wait(Duration::from_millis(200));
         }
@@ -109,14 +109,14 @@ impl Frames {
         }
     }
 
-    fn dropped(&self) -> u64 {
+    pub(crate) fn dropped(&self) -> u64 {
         self.camera.as_ref().map_or(0, Camera::dropped)
     }
 }
 
 /// The frame shrunk for the window: one pixel in so many, flipped left to right when `mirror` (a camera facing
 /// its user is watched as a mirror)
-fn preview(image: &Image, mirror: bool) -> (Vec<u8>, usize, usize) {
+pub(crate) fn preview(image: &Image, mirror: bool) -> (Vec<u8>, usize, usize) {
     let step = image.width.div_ceil(PREVIEW).max(1);
     let (width, height) = (image.width / step, image.height / step);
     let mut out = Vec::with_capacity(width * height * 4);
