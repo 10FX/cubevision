@@ -101,7 +101,7 @@ impl VideoReader {
         let ffmpeg = &options.ffmpeg;
         let start = if options.start.is_finite() { options.start.max(0.0) } else { 0.0 };
         let ffprobe = ffprobe_for(ffmpeg);
-        let probe = Command::new(&ffprobe)
+        let probe = crate::quiet(&mut Command::new(&ffprobe))
             .args(["-v", "error", "-select_streams", "v:0", "-show_entries"])
             .arg("stream=codec_name,width,height,avg_frame_rate,r_frame_rate,duration,nb_frames:stream_side_data=rotation:format=duration")
             .args(["-of", "json"])
@@ -137,7 +137,7 @@ impl VideoReader {
         };
         // showinfo tells each frame's time on the error stream, one line a frame, in the order of the frames
         let filter = if options.max_width.is_some() { format!("scale={out_width}:{out_height},showinfo") } else { "showinfo".to_string() };
-        let mut child = Command::new(ffmpeg)
+        let mut child = crate::quiet(&mut Command::new(ffmpeg))
             .args(["-nostdin", "-nostats", "-loglevel", "level+info"])
             // Before the input: ffmpeg jumps to the key frame before and decodes up to the time asked
             .args(if start > 0.0 { vec!["-ss".to_string(), format!("{start:.3}")] } else { Vec::new() })

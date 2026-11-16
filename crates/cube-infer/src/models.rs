@@ -149,6 +149,13 @@ pub fn library() -> Result<PathBuf> {
     bail!("ONNX Runtime not found: set ORT_DYLIB_PATH to its library ({name}), or put it next to the executable")
 }
 
+/// The ONNX Runtime library this process loaded, once it has: it keeps it until it ends
+pub fn loaded_library() -> Option<PathBuf> {
+    LOADED.get().cloned()
+}
+
+static LOADED: OnceLock<PathBuf> = OnceLock::new();
+
 /// ONNX Runtime allows one environment per process
 fn environment() -> Result<&'static Environment> {
     static ENV: OnceLock<Environment> = OnceLock::new();
@@ -166,6 +173,7 @@ fn environment() -> Result<&'static Environment> {
         .with_name("cubevision")
         .build()
         .map_err(|e| anyhow!("{e}"))?;
+    let _ = LOADED.set(path);
     Ok(ENV.get_or_init(|| env))
 }
 

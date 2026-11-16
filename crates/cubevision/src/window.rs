@@ -1,4 +1,4 @@
-//! The window: what the live mode and the replay share
+//! The window: what its screens share
 
 use std::path::PathBuf;
 
@@ -54,21 +54,32 @@ fn save(file: &std::path::Path, image: &egui::ColorImage) -> Result<()> {
 /// Opens the window and runs the app until it is closed
 pub fn run(title: &str, size: [f32; 2], app: impl FnOnce(&eframe::CreationContext) -> Box<dyn eframe::App> + 'static) -> Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size(size).with_min_inner_size([760.0, 480.0]).with_title(title),
+        viewport: egui::ViewportBuilder::default().with_inner_size(size).with_min_inner_size([900.0, 600.0]).with_title(title),
         ..Default::default()
     };
     eframe::run_native(
         title,
         options,
         Box::new(move |cc| {
-            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            crate::theme::install(&cc.egui_ctx);
             Ok(app(cc))
         }),
     )
     .map_err(|e| anyhow!("the window could not be opened: {e}"))
 }
 
-/// A move written large, in a flow of them
-pub fn token(ui: &mut egui::Ui, text: &str, colour: egui::Color32) {
-    ui.label(egui::RichText::new(text).monospace().size(20.0).color(colour));
+/// What a screen asks for once it has drawn itself
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Next {
+    Stay,
+    /// Back to the first screen
+    Home,
+}
+
+/// One of the window's screens: a mode, running
+pub trait Screen {
+    /// Draws the screen for this frame of the window
+    fn show(&mut self, ctx: &egui::Context) -> Next;
+    /// The screen is left: what it started (a camera, a thread) is let go
+    fn leave(&mut self) {}
 }

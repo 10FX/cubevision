@@ -18,3 +18,15 @@ pub struct Image {
     /// When it was shown: ms from the start of the video, or since the camera opened
     pub t: f64,
 }
+
+/// A program run for its output, without a console window of its own: on Windows a program that has no console
+/// (the window started by a double click) would open one for each
+pub fn quiet(command: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW
+        command.creation_flags(0x0800_0000);
+    }
+    command
+}

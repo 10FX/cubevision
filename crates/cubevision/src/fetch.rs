@@ -88,12 +88,33 @@ pub fn fetch(dir: &Path, url: &str) -> Result<()> {
         return Ok(());
     }
     println!("downloading {url}");
+    let (written, checked) = download(dir, url, &mut |_, _| {})?;
+    println!("{} files in {}, {} checked against their checksums: {}", written.len(), dir.display(), checked, written.join(", "));
+    Ok(())
+}
+
+/// The models' zip downloaded, unpacked into `dir` and checked: the files written and how many were checked.
+/// `progress` is told the bytes received so far, and how many are to come when the server says.
+pub fn download(dir: &Path, url: &str, progress: &mut dyn FnMut(u64, Option<u64>)) -> Result<(Vec<String>, usize)> {
     let response = ureq::get(url).call().with_context(|| format!("downloading {url}"))?;
+    let all: Option<u64> = response.header("Content-Length").and_then(|length| length.parse().ok());
+    let mut reader = response.into_reader().take(MOST);
     let mut zip = Vec::new();
-    response.into_reader().take(MOST).read_to_end(&mut zip).context("the download stopped")?;
-    println!("{:.1} MB", zip.len() as f64 / (1 << 20) as f64);
+    let mut chunk = vec![0u8; 1 << 16];
+    loop {
+        let n = reader.read(&mut chunk).context("the download stopped")?;
+        if n == 0 {
+            break;
+        }
+        zip.extend_from_slice(&chunk[..n]);
+        progress(zip.len() as u64, all);
+    }
     let written = unpack(&zip, dir)?;
     let checked = verify(dir)?;
-    println!("{} files in {}, {} checked against their checksums: {}", written.len(), dir.display(), checked.len(), written.join(", "));
-    Ok(())
+    Ok((written, checked.len()))
+}
+
+/// Whether a folder holds models: the two descriptions the program reads first
+pub fn present(dir: &Path) -> bool {
+    dir.join("cube-reader.json").is_file() && dir.join("cube-detector.json").is_file()
 }

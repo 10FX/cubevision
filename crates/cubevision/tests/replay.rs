@@ -240,3 +240,37 @@ fn another_scramble_is_told_from_a_solve_hard_to_follow() {
     assert!(!other.solved);
     assert!(cubevision::json::mismatch(&other), "start {:?}, whole {}", cubevision::json::start_agreement(&other), other.agreement);
 }
+
+fn solve() -> cube_decode::reconstruct::Reconstruction {
+    use cube_decode::reconstruct::{Phase, Reconstruction, Split};
+    let split = |phase, end: f64, duration: f64, moves, alg: &str| Split { phase, end, duration, recognition: 0.0, moves, alg: alg.into() };
+    Reconstruction {
+        moves: 9,
+        tps: 3.0,
+        time: 3000.0,
+        splits: vec![
+            split(Phase::Cross, 1000.0, 1000.0, 4, "x2 R U R' F"),
+            split(Phase::Oll, 2200.0, 1200.0, 3, "R U R'"),
+            split(Phase::Pll, 3000.0, 800.0, 2, "U2 R2 "),
+        ],
+        solution: String::new(),
+        pause: 0.0,
+        start: 5000.0,
+    }
+}
+
+#[test]
+fn the_stages_follow_each_other_on_the_videos_clock() {
+    let stages = cubevision::replay::stages(&solve());
+    let spans: Vec<(&str, f64, f64, u32)> = stages.iter().map(|s| (s.name(), s.from, s.to, s.moves)).collect();
+    assert_eq!(spans, [("Cross", 5000.0, 6000.0, 4), ("OLL", 6000.0, 7200.0, 3), ("PLL", 7200.0, 8000.0, 2)]);
+}
+
+#[test]
+fn a_solve_is_written_with_its_scramble_and_its_stages() {
+    let text = cubevision::replay::written(" R U F ", &solve());
+    assert_eq!(
+        text,
+        "Scramble: R U F\n\nx2 R U R' F // Cross (1.00 s)\nR U R' // OLL (1.20 s)\nU2 R2 // PLL (0.80 s)\n\n9 moves in 3.00 s, 3.00 turns a second (read by cubevision)\n"
+    );
+}

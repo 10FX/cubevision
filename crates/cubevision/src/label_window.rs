@@ -27,8 +27,10 @@ use eframe::egui;
 use serde_json::{Value, json};
 
 use crate::label::{Label, Pause, Phase, Session, fit, ms, state_text};
-use crate::live::{Frames, Source, preview};
+use crate::live::{Frames, Source, frame_box, picture, preview, state_line, wait_for};
+use crate::theme;
 use crate::window::Snapshot;
+use crate::window::{Next, Screen};
 
 /// Side of the crops saved: the renders' size
 pub const SIZE: usize = 256;
@@ -237,28 +239,24 @@ fn recording(
     Ok(())
 }
 
-/// The colours of the faces U R F D L B, their names and how they are painted
-const FACE_COLOURS: [(&str, egui::Color32); 6] = [
-    ("white", egui::Color32::from_rgb(245, 245, 245)),
-    ("red", egui::Color32::from_rgb(230, 60, 50)),
-    ("green", egui::Color32::from_rgb(60, 200, 90)),
-    ("yellow", egui::Color32::from_rgb(250, 220, 50)),
-    ("orange", egui::Color32::from_rgb(255, 150, 40)),
-    ("blue", egui::Color32::from_rgb(70, 130, 255)),
-];
+/// The colours of the faces U R F D L B, as they are called
+const FACE_NAMES: [&str; 6] = ["white", "red", "green", "yellow", "orange", "blue"];
 
 /// A move in words: which face, which way (as seen facing that face)
 pub fn in_words(mv: usize) -> String {
     let way = ["a quarter turn clockwise", "a half turn", "a quarter turn counter-clockwise"][mv % 3];
-    format!("{} face, {way}", FACE_COLOURS[mv / 3].0)
+    format!("{} face, {way}", FACE_NAMES[mv / 3])
 }
 
-struct LabelApp {
+pub struct LabelScreen {
     shared: Arc<Mutex<Shared>>,
     session: Arc<Mutex<Session>>,
     log: Arc<Mutex<Log>>,
     start: Instant,
     stop: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    /// The session's end is written
+    ended: bool,
     cube: CubeView,
     /// The sequence and the step the 3D cube shows
     shown: (usize, usize),
@@ -269,29 +267,31 @@ struct LabelApp {
     snapshot: Snapshot,
 }
 
-impl LabelApp {
-    fn new(options: LabelOptions, log: Log, ctx: &egui::Context) -> Self {
+impl LabelScreen {
+    pub fn new(options: LabelOptions, log: Log, ctx: &egui::Context) -> Self {
         let shared = Arc::new(Mutex::new(Shared::default()));
         let session = Arc::new(Mutex::new(Session::new(options.seed, options.length)));
         let log = Arc::new(Mutex::new(log));
         let stop = Arc::new(AtomicBool::new(false));
         let start = Instant::now();
         let (out, snapshot, auto) = (options.out.clone(), options.snapshot.clone(), options.auto);
-        {
+        let worker = {
             let (shared, session, log, stop, ctx) = (shared.clone(), session.clone(), log.clone(), stop.clone(), ctx.clone());
             std::thread::spawn(move || {
                 if let Err(e) = recording(&options, &shared, &session, &log, start, &stop, &ctx) {
                     shared.lock().unwrap().error = Some(format!("{e:#}"));
                     ctx.request_repaint();
                 }
-            });
-        }
-        LabelApp {
+            })
+        };
+        LabelScreen {
             shared,
             session,
             log,
             start,
             stop,
+            worker: Some(worker),
+            ended: false,
             cube: CubeView::new(Cube::solved()),
             shown: (0, 0),
             picture: None,
@@ -318,8 +318,8 @@ impl LabelApp {
     }
 }
 
-impl eframe::App for LabelApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl Screen for LabelScreen {
+    fn show(&mut self, ctx: &egui::Context) -> Next {
         self.snapshot.tick(ctx);
         let t = self.start.elapsed().as_secs_f64();
         let (space, undo, lost, quit) = ctx.input(|i| {
@@ -361,9 +361,6 @@ impl eframe::App for LabelApp {
                 session.still_progress(t),
             )
         };
-        if quit {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
         let (status, error, boxed, agreement, still, moving, fps, source, device, note) = {
             let mut s = self.shared.lock().unwrap();
             if let Some((data, width, height)) = s.preview.take() {
@@ -388,151 +385,148 @@ impl eframe::App for LabelApp {
         };
         let recording = !matches!(phase, Phase::Paused(_));
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(format!("{} images saved ({still} still, {moving} moving)", still + moving));
-                ui.separator();
-                ui.label(format!("{} sequence{} validated", self.validated, if self.validated == 1 { "" } else { "s" }));
-                ui.separator();
-                ui.label(format!("Saved in {}", self.out.display()));
-                if !device.is_empty() {
-                    ui.separator();
-                    ui.label(format!("Models on {device}, {fps:.0} frames a second, {source}"));
-                }
-                if let Some(note) = &note {
-                    ui.separator();
-                    ui.label(egui::RichText::new(note).weak());
-                }
-            });
+        let home = theme::top_bar(ctx, "Label", theme::LABEL, |ui| {
+            ui.label(theme::faint(format!("Saved in {}", self.out.display())));
         });
-        egui::SidePanel::right("cube").resizable(false).exact_width((ctx.screen_rect().width() * 0.42).clamp(320.0, 560.0)).show(
-            ctx,
-            |ui| {
-                ui.add_space(8.0);
-                let side = ui.available_width().min(ui.available_height() * 0.5);
-                ui.vertical_centered(|ui| self.cube.show(ui, side));
-                ui.label(egui::RichText::new("Your cube should look like this one.").weak());
-                ui.add_space(10.0);
-                let weak = ui.visuals().weak_text_color();
-                match phase {
-                    Phase::Paused(Pause::Start) => {
-                        ui.heading("Show the solved cube to the camera");
-                        ui.label("Then press Space. Hold it any way you like: the colours tell which face is which.");
-                    }
-                    Phase::Paused(Pause::Undone) => {
-                        ui.heading("Move taken back");
-                        ui.label("Put your cube back as the one above, then press Space.");
-                    }
-                    Phase::Paused(Pause::Lost) => {
-                        ui.heading("Sequence set aside");
-                        ui.label("Solve your cube, then press Space: a new sequence starts.");
-                    }
-                    Phase::Paused(Pause::Done) => {
-                        ui.heading("Sequence finished: is your cube solved?");
-                        ui.label("Space: yes, the next sequence starts. X: no, this one is set aside.");
-                    }
-                    Phase::Still => {
-                        ui.heading("Show the cube, turn nothing");
-                        ui.label("Tilt it, bring it closer, further, show another corner.");
-                        ui.add(egui::ProgressBar::new(progress as f32).desired_width(ui.available_width().min(320.0)));
-                        if let Some(mv) = prompt {
-                            ui.label(egui::RichText::new(format!("Next: {}", MOVES[mv])).color(weak));
+        let mut facts = vec![
+            format!("{} images saved ({still} still, {moving} moving)", still + moving),
+            format!("{} sequence{} validated", self.validated, if self.validated == 1 { "" } else { "s" }),
+        ];
+        if !device.is_empty() {
+            facts.push(format!("Models on {device}, {fps:.0} frames a second, {source}"));
+        }
+        facts.extend(note.clone());
+        theme::foot(ctx, &facts);
+
+        let side = egui::Frame::new().fill(theme::PLASTIC).inner_margin(egui::Margin { left: 6, right: 18, top: 4, bottom: 8 });
+        egui::SidePanel::right("cube")
+            .frame(side)
+            .show_separator_line(false)
+            .resizable(false)
+            .exact_width((ctx.screen_rect().width() * 0.42).clamp(340.0, 580.0))
+            .show(ctx, |ui| {
+                let size = ui.available_width().min(ui.available_height() * 0.46);
+                ui.vertical_centered(|ui| self.cube.show(ui, size));
+                ui.label(theme::faint("Your cube should look like this one."));
+                ui.add_space(6.0);
+                theme::card(ui, Some(theme::LABEL), |ui| {
+                    ui.set_width(ui.available_width());
+                    match phase {
+                        Phase::Paused(Pause::Start) => {
+                            ui.label(theme::title("Show the solved cube to the camera"));
+                            ui.label(theme::muted("Then press Space. Hold it any way you like: the colours tell which face is which."));
                         }
-                    }
-                    Phase::Move => {
-                        if let Some(mv) = prompt {
-                            let (_, colour) = FACE_COLOURS[mv / 3];
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(MOVES[mv]).monospace().size(64.0).color(colour));
-                                ui.vertical(|ui| {
-                                    ui.add_space(14.0);
-                                    ui.label(egui::RichText::new(in_words(mv)).size(18.0));
-                                    ui.label(egui::RichText::new("as seen facing that face. Then press Space.").color(weak));
+                        Phase::Paused(Pause::Undone) => {
+                            ui.label(theme::title("Move taken back"));
+                            ui.label(theme::muted("Put your cube back as the one above, then press Space."));
+                        }
+                        Phase::Paused(Pause::Lost) => {
+                            ui.label(theme::title("Sequence set aside"));
+                            ui.label(theme::muted("Solve your cube, then press Space: a new sequence starts."));
+                        }
+                        Phase::Paused(Pause::Done) => {
+                            ui.label(theme::title("Sequence finished: is your cube solved?"));
+                            ui.label(theme::muted("Space: yes, the next sequence starts. X: no, this one is set aside."));
+                        }
+                        Phase::Still => {
+                            ui.label(theme::title("Show the cube, turn nothing"));
+                            ui.label(theme::muted("Tilt it, bring it closer, further, show another corner."));
+                            ui.add(
+                                egui::ProgressBar::new(progress as f32).fill(theme::LABEL).desired_width(ui.available_width().min(320.0)),
+                            );
+                            if let Some(mv) = prompt {
+                                ui.horizontal(|ui| {
+                                    ui.label(theme::faint("Next"));
+                                    theme::chip(ui, MOVES[mv], theme::Chip::Ahead);
                                 });
-                            });
+                            }
+                        }
+                        Phase::Move => {
+                            if let Some(mv) = prompt {
+                                ui.horizontal(|ui| {
+                                    let large = egui::FontId::new(60.0, theme::semibold());
+                                    ui.label(egui::RichText::new(MOVES[mv]).font(large).color(theme::face_colour(MOVES[mv])));
+                                    ui.vertical(|ui| {
+                                        ui.add_space(12.0);
+                                        ui.label(egui::RichText::new(in_words(mv)).size(18.0));
+                                        ui.label(theme::muted("as seen facing that face. Then press Space."));
+                                    });
+                                });
+                            }
                         }
                     }
-                }
-                ui.add_space(8.0);
+                });
                 if recording {
                     ui.horizontal(|ui| {
-                        ui.label(format!("Sequence {}, move {} of {total}", sequence + 1, (step + 1).min(total)));
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        ui.label(theme::muted(format!("Sequence {}, move {} of {total}", sequence + 1, (step + 1).min(total))));
                         if !upcoming.is_empty() && phase == Phase::Move {
-                            ui.separator();
-                            let then: Vec<&str> = upcoming.iter().map(|&m| MOVES[m]).collect();
-                            ui.label(egui::RichText::new(format!("then {}", then.join(" "))).monospace().color(weak));
+                            ui.add_space(8.0);
+                            ui.label(theme::faint("then"));
+                            for &m in &upcoming {
+                                theme::chip(ui, MOVES[m], theme::Chip::Ahead);
+                            }
                         }
                     });
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new("Space: done · Backspace: take the last move back · X: my cube no longer matches · Esc: end")
-                            .color(weak),
-                    );
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(14.0, 4.0);
+                        theme::key(ui, "Space", "done");
+                        theme::key(ui, "Backspace", "take the last move back");
+                        theme::key(ui, "X", "my cube no longer matches");
+                        theme::key(ui, "Esc", "end");
+                    });
                 });
-            },
-        );
-        egui::CentralPanel::default().show(ctx, |ui| {
+            });
+        let centre = egui::Frame::new().fill(theme::PLASTIC).inner_margin(egui::Margin { left: 18, right: 12, top: 4, bottom: 8 });
+        egui::CentralPanel::default().frame(centre).show(ctx, |ui| {
             if let Some(error) = &error {
-                ui.add_space(20.0);
-                ui.heading("The session stopped");
-                ui.label(egui::RichText::new(error).color(egui::Color32::from_rgb(255, 120, 100)));
+                theme::failure(ui, "The session stopped", error);
                 return;
             }
-            let Some(picture) = &self.picture else {
-                ui.centered_and_justified(|ui| ui.heading(if status.is_empty() { "Waiting for the camera…" } else { &status }));
+            let Some(texture) = &self.picture else {
+                ui.centered_and_justified(|ui| {
+                    ui.label(theme::title(if status.is_empty() { "Waiting for the camera…" } else { &status }))
+                });
                 return;
             };
-            let size = picture.size_vec2();
-            let scale = (ui.available_width() / size.x).min((ui.available_height() - 64.0) / size.y).max(0.1);
-            let (rect, _) = ui.allocate_exact_size(size * scale, egui::Sense::hover());
-            ui.painter().image(
-                picture.id(),
-                rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-            let (green, amber, red) =
-                (egui::Color32::from_rgb(80, 220, 120), egui::Color32::from_rgb(240, 200, 60), egui::Color32::from_rgb(255, 110, 90));
-            if let Some([x, y, w, h]) = boxed {
-                let found = egui::Rect::from_min_size(
-                    rect.min + egui::vec2(x * rect.width(), y * rect.height()),
-                    egui::vec2(w * rect.width(), h * rect.height()),
-                );
-                ui.painter_at(rect).rect_stroke(
-                    found,
-                    4.0,
-                    egui::Stroke::new(2.5, if recording { green } else { amber }),
-                    egui::StrokeKind::Inside,
-                );
+            let rect = picture(ui, texture, 62.0);
+            if let Some(boxed) = boxed {
+                frame_box(ui, rect, boxed, if recording { theme::GOOD } else { theme::WARNING });
             }
-            ui.add_space(6.0);
+            ui.add_space(4.0);
             let (what, colour) = match (boxed.is_some(), recording, agreement) {
-                (false, _, _) => ("No cube in sight: nothing is saved".to_owned(), amber),
-                (true, false, _) => ("Paused: nothing is saved".to_owned(), amber),
-                (true, true, None) => ("Saving. The reader reads no face here".to_owned(), ui.visuals().text_color()),
+                (false, _, _) => ("No cube in sight: nothing is saved".to_owned(), theme::WARNING),
+                (true, false, _) => ("Paused: nothing is saved".to_owned(), theme::WARNING),
+                (true, true, None) => ("Saving. The reader reads no face here".to_owned(), theme::MUTED),
                 (true, true, Some(a)) if a >= 0.75 => {
-                    (format!("Saving. The reader agrees with the cube on screen ({:.0} %)", a * 100.0), green)
+                    (format!("Saving. The reader agrees with the cube on screen ({:.0} %)", a * 100.0), theme::GOOD)
                 }
                 (true, true, Some(a)) if a >= 0.5 => {
-                    (format!("Saving. The reader half agrees with the cube on screen ({:.0} %)", a * 100.0), amber)
+                    (format!("Saving. The reader half agrees with the cube on screen ({:.0} %)", a * 100.0), theme::WARNING)
                 }
-                (true, true, Some(a)) => {
-                    (format!("Saving. The reader disagrees with the cube on screen ({:.0} %): check your cube against it", a * 100.0), red)
-                }
+                (true, true, Some(a)) => (
+                    format!("Saving. The reader disagrees with the cube on screen ({:.0} %): check your cube against it", a * 100.0),
+                    theme::ERROR,
+                ),
             };
-            ui.label(egui::RichText::new(what).size(16.0).color(colour));
-            ui.label(egui::RichText::new("Only the square around the cube is saved, never the whole picture.").weak());
+            state_line(ui, colour, &what);
+            ui.label(theme::faint("Only the square around the cube is saved, never the whole picture."));
         });
         // The still time's bar moves without a new frame
         if phase == Phase::Still {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
+        if home || quit { Next::Home } else { Next::Stay }
     }
 
-    fn on_exit(&mut self) {
+    fn leave(&mut self) {
+        if std::mem::replace(&mut self.ended, true) {
+            return;
+        }
         self.stop.store(true, Ordering::Relaxed);
+        wait_for(self.worker.take());
         let t = self.start.elapsed().as_secs_f64();
         let events = self.session.lock().unwrap().take_events();
         let (still, moving) = {
@@ -549,8 +543,8 @@ impl eframe::App for LabelApp {
     }
 }
 
-/// Opens the labelling window; returns when it is closed
-pub fn run(options: LabelOptions) -> Result<()> {
+/// The labelling screen on a new session's folder
+pub fn screen(options: LabelOptions, ctx: &egui::Context) -> Result<LabelScreen> {
     let log = Log::create(&options.out)?;
-    crate::window::run("cubevision: label", [1180.0, 700.0], |cc| Box::new(LabelApp::new(options, log, &cc.egui_ctx)))
+    Ok(LabelScreen::new(options, log, ctx))
 }

@@ -2,32 +2,41 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use cube_capture::{CameraRequest, VideoOptions, VideoReader};
-use cube_decode::pipeline::{AnalyzeOptions, analyze_readings};
+use cube_capture::CameraRequest;
 use cube_infer::device::Device;
-use cube_infer::models::{BATCH, Models};
+use cube_infer::models::Models;
+use cubevision::app::{self, First, Start};
 use cubevision::colours::{colour, hold};
 use cubevision::live::{LiveOptions, Source};
-use cubevision::read::FrameLoop;
-use cubevision::replay_window;
+use cubevision::settings::{self, Engine};
+use cubevision::solve::{Progress, Request, solve};
 use cubevision::window::Snapshot;
 use serde_json::json;
 
 #[derive(Parser)]
 #[command(name = "cubevision", version, about = "Reads a Rubik's Cube from a camera or a video")]
 struct Cli {
-    /// Without a command: the live mode
+    /// Without a command: the window, on its first screen
     #[command(subcommand)]
     command: Option<Command>,
+    /// The folder of the models (default: `models` next to the program)
+    #[arg(long, env = "CUBE_MODELS")]
+    models: Option<PathBuf>,
+    #[arg(long, value_name = "PNG", hide = true)]
+    screenshot: Option<PathBuf>,
+    #[arg(long, default_value_t = 4.0, hide = true)]
+    after: f64,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// The moves turned in front of the camera, as they are made, on a 3D cube (the default)
+    /// The moves turned in front of the camera, as they are made, on a 3D cube
     Live(LiveArgs),
     /// The moves of a solve filmed, from its video and its scramble, played back on a 3D cube
     Video(VideoArgs),
@@ -147,6 +156,9 @@ struct LiveArgs {
     /// A video played at its own pace in place of the camera, to try the live mode without one
     #[arg(long, value_name = "VIDEO")]
     source: Option<PathBuf>,
+    /// The scramble the cube starts from, held white on top and green in front (default: solved)
+    #[arg(long, value_name = "SCRAMBLE", hide = true)]
+    from: Option<String>,
     #[command(flatten)]
     shared: Shared,
 }
@@ -195,7 +207,26 @@ fn models_dir(named: &Option<PathBuf>) -> Result<PathBuf> {
     beside.context("the models' folder is not known: name it with --models")
 }
 
+/// The ONNX Runtime of the program's own `runtime` folder that runs this device, unless one is named already
+/// (`ORT_DYLIB_PATH`): a command needs no script to set it
+fn point_at_runtime(device: Option<Device>) {
+    if std::env::var_os("ORT_DYLIB_PATH").is_some_and(|path| !path.is_empty()) {
+        return;
+    }
+    let engine = match device {
+        None => Engine::Auto,
+        Some(Device::DirectMl) => Engine::DirectMl,
+        Some(Device::Cuda) => Engine::Cuda,
+        Some(Device::Cpu) => Engine::Cpu,
+        Some(Device::OpenVinoGpu | Device::OpenVinoCpu | Device::OpenVinoNpu) => Engine::IntelGpu,
+    };
+    if let Some(beside) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.to_path_buf())) {
+        settings::point_at(engine, &beside);
+    }
+}
+
 fn load(shared: &Shared) -> Result<Models> {
+    point_at_runtime(shared.device);
     let models = Models::load(&models_dir(&shared.models)?, shared.device)?;
     if let Some(why) = &models.fallback {
         eprintln!("note: {why}");
@@ -205,86 +236,49 @@ fn load(shared: &Shared) -> Result<Models> {
 
 fn video(args: &VideoArgs) -> Result<bool> {
     cubevision::colours::scramble(&args.scramble)?;
-    let hold = hold(colour(&args.top)?, colour(&args.front)?)?;
-    let cross = args.cross.as_deref().map(colour).transpose()?;
-    let mut source = VideoReader::open(&args.video, &VideoOptions { ffmpeg: args.ffmpeg.clone(), ..VideoOptions::default() })?;
-    let info = source.info().clone();
-    let mut models = load(&args.shared)?;
-    let batches = args.detect_every.is_none();
-    if batches {
-        models.warm(BATCH)?;
-    }
-    let Models { detector, reader, device, .. } = models;
-    let mut frames = FrameLoop::new(detector, reader, &args.scramble, Some(hold), args.detect_every.unwrap_or(1).max(1));
-
-    let reading = Instant::now();
-    let mut batch = Vec::with_capacity(BATCH);
+    let request = Request {
+        video: args.video.clone(),
+        scramble: args.scramble.clone(),
+        hold: hold(colour(&args.top)?, colour(&args.front)?)?,
+        cross: args.cross.as_deref().map(colour).transpose()?,
+        ffmpeg: args.ffmpeg.clone(),
+        detect_every: args.detect_every,
+        dump: args.dump.clone(),
+    };
+    point_at_runtime(args.shared.device);
     // A long video takes a while: how far the reading is, every second, on the error stream
-    let (mut told, mut count) = (Instant::now(), 0usize);
-    while let Some(image) = source.next_image()? {
-        count += 1;
-        if told.elapsed().as_secs_f64() >= 1.0 {
-            told = Instant::now();
-            match info.frames {
-                Some(all) => eprintln!("reading: {count} of {all} frames"),
-                None => eprintln!("reading: {count} frames"),
+    let mut told = Instant::now();
+    let mut progress = |now: Progress| {
+        match now {
+            Progress::Reading { read, all } if told.elapsed().as_secs_f64() >= 1.0 => {
+                told = Instant::now();
+                match all {
+                    Some(all) => eprintln!("reading: {read} of {all} frames"),
+                    None => eprintln!("reading: {read} frames"),
+                }
             }
+            Progress::Decoding { read, seconds } => eprintln!("read {read} frames in {seconds:.1} s; finding the moves…"),
+            _ => {}
         }
-        if batches {
-            batch.push(image);
-            if batch.len() == BATCH {
-                frames.push_batch(&batch)?;
-                batch.clear();
-            }
-        } else {
-            frames.push(&image)?;
-        }
-    }
-    frames.push_batch(&batch)?;
-    let read = frames.finish();
-    let read_seconds = reading.elapsed().as_secs_f64();
-    if read.frames.is_empty() {
-        bail!("{} holds no frame", args.video.display());
-    }
-
-    if let Some(file) = &args.dump {
-        std::fs::write(file, serde_json::to_string(&cubevision::json::frames(&read.frames))?)
-            .with_context(|| format!("writing {}", file.display()))?;
-    }
-
-    eprintln!("read {count} frames in {read_seconds:.1} s; finding the moves…");
-    let decoding = Instant::now();
-    let options = AnalyzeOptions { hold: Some(hold.to_string()), cross, ..AnalyzeOptions::default() };
-    let Some(result) = analyze_readings(&read.frames, &args.scramble, &options) else {
-        bail!(
-            "no face of a cube could be read in {} ({} frames, the cube found in {})",
-            args.video.display(),
-            read.frames.len(),
-            read.found
-        );
+        true
     };
-    let decode_seconds = decoding.elapsed().as_secs_f64();
-
-    // A scramble that is not the video's: the readings fit no cube that follows from it
-    let mismatch = cubevision::json::mismatch(&result);
-    let warning = if mismatch {
-        Some("the scramble does not seem to be this video's: the moves found explain too little of what was read, and are not given")
-    } else if !result.solved {
-        Some("the moves found do not end on a solved cube: some turns could not be followed (see gaps)")
-    } else {
-        None
-    };
+    let found =
+        solve(&request, &models_dir(&args.shared.models)?, args.shared.device, &mut progress)?.context("the reading was stopped")?;
+    if let Some(why) = &found.note {
+        eprintln!("note: {why}");
+    }
+    let (info, result) = (&found.info, &found.result);
     if args.json {
         let mut out = json!({
-            "video": { "file": args.video.display().to_string(), "width": info.width, "height": info.height, "fps": info.fps, "codec": info.codec, "mirrored": read.mirrored },
-            "device": device.name(),
+            "video": { "file": args.video.display().to_string(), "width": info.width, "height": info.height, "fps": info.fps, "codec": info.codec, "mirrored": found.mirrored },
+            "device": found.device,
             "scramble": args.scramble,
-            "cubeFound": read.found,
-            "seconds": { "read": read_seconds, "decode": decode_seconds },
-            "warning": warning,
+            "cubeFound": found.found,
+            "seconds": { "read": found.read_seconds, "decode": found.decode_seconds },
+            "warning": found.warning,
         });
         let fields = out.as_object_mut().unwrap();
-        for (key, value) in cubevision::json::result(&result, mismatch).as_object().unwrap() {
+        for (key, value) in cubevision::json::result(result, found.mismatch).as_object().unwrap() {
             fields.insert(key.clone(), value.clone());
         }
         println!("{}", serde_json::to_string_pretty(&out)?);
@@ -295,11 +289,11 @@ fn video(args: &VideoArgs) -> Result<bool> {
             info.width,
             info.height,
             info.fps,
-            if read.mirrored { ", mirrored" } else { "" }
+            if found.mirrored { ", mirrored" } else { "" }
         );
-        println!("read on {} in {read_seconds:.1} s, decoded in {decode_seconds:.1} s", device.name());
-        println!("frames read: {} of {} (cube found in {})", result.read_frames, result.frames, read.found);
-        if !mismatch {
+        println!("read on {} in {:.1} s, decoded in {:.1} s", found.device, found.read_seconds, found.decode_seconds);
+        println!("frames read: {} of {} (cube found in {})", result.read_frames, result.frames, found.found);
+        if !found.mismatch {
             let r = &result.reconstruction;
             println!("solution ({} moves, {:.2} s, {:.2} turns a second):", r.moves, r.time / 1000.0, r.tps);
             for step in &r.splits {
@@ -308,21 +302,17 @@ fn video(args: &VideoArgs) -> Result<bool> {
             println!("stickers read that fit the moves: {:.1} %", result.agreement * 100.0);
         }
     }
-    if let Some(warning) = warning {
+    if let Some(warning) = found.warning {
         eprintln!("warning: {warning}");
     }
     let solved = result.solved;
-    if !args.json && !args.no_window && !mismatch {
-        replay_window::run(replay_window::Shown {
-            video: args.video.clone(),
-            ffmpeg: args.ffmpeg.clone(),
-            title: args.video.file_name().unwrap_or_default().to_string_lossy().into_owned(),
-            scramble: args.scramble.clone(),
-            device: device.name().to_owned(),
-            mirrored: read.mirrored,
-            warning: warning.map(str::to_owned),
-            result,
-            snapshot: Snapshot::new(args.shared.screenshot.clone(), args.shared.after),
+    if !args.json && !args.no_window && !found.mismatch {
+        let snapshot = Snapshot::new(args.shared.screenshot.clone(), args.shared.after);
+        let shown = app::shown(&request, found, snapshot);
+        app::run(Start {
+            models: models_dir(&args.shared.models)?,
+            first: Some(First::Replay(Box::new(shown))),
+            snapshot: Snapshot::default(),
         })?;
     }
     Ok(solved)
@@ -333,8 +323,17 @@ fn live(args: &LiveArgs) -> Result<bool> {
         Some(video) => Source::Video(video.clone()),
         None => Source::Camera(CameraRequest { index: args.camera, width: args.width, height: args.height, fps: args.fps }),
     };
-    let snapshot = Snapshot::new(args.shared.screenshot.clone(), args.shared.after);
-    cubevision::live::run(LiveOptions { source, models: models_dir(&args.shared.models)?, device: args.shared.device, snapshot })?;
+    point_at_runtime(args.shared.device);
+    let models = models_dir(&args.shared.models)?;
+    let options = LiveOptions {
+        source,
+        models: models.clone(),
+        device: args.shared.device,
+        mirror: Arc::new(AtomicBool::new(true)),
+        start: args.from.clone(),
+        snapshot: Snapshot::new(args.shared.screenshot.clone(), args.shared.after),
+    };
+    app::run(Start { models, first: Some(First::Live(options)), snapshot: Snapshot::default() })?;
     Ok(true)
 }
 
@@ -346,9 +345,11 @@ fn label(args: &LabelArgs) -> Result<bool> {
     };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let out = args.out.clone().unwrap_or_else(|| PathBuf::from("cubevision-labels").join(format!("session-{now}")));
-    cubevision::label_window::run(cubevision::label_window::LabelOptions {
+    point_at_runtime(live.shared.device);
+    let models = models_dir(&live.shared.models)?;
+    let options = cubevision::label_window::LabelOptions {
         source,
-        models: models_dir(&live.shared.models)?,
+        models: models.clone(),
         device: live.shared.device,
         out,
         seed: args.seed.unwrap_or(now),
@@ -356,12 +357,34 @@ fn label(args: &LabelArgs) -> Result<bool> {
         note: args.note.clone(),
         auto: args.auto,
         snapshot: Snapshot::new(live.shared.screenshot.clone(), live.shared.after),
-    })?;
+    };
+    app::run(Start { models, first: Some(First::Label(options)), snapshot: Snapshot::default() })?;
     Ok(true)
 }
 
+/// Started by a double click, the program owns a console of its own, empty: it is let go (a command typed in a
+/// terminal shares the terminal's, and keeps it)
+#[cfg(windows)]
+fn leave_own_console() {
+    unsafe extern "system" {
+        fn GetConsoleProcessList(list: *mut u32, count: u32) -> u32;
+        fn FreeConsole() -> i32;
+    }
+    let mut list = [0u32; 2];
+    // SAFETY: the list is as long as told; FreeConsole takes nothing
+    unsafe {
+        if GetConsoleProcessList(list.as_mut_ptr(), 2) == 1 {
+            FreeConsole();
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn leave_own_console() {}
+
 fn run() -> Result<bool> {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    match cli.command {
         Some(Command::Video(args)) => video(&args),
         Some(Command::Live(args)) => live(&args),
         Some(Command::Label(args)) => label(&args),
@@ -378,6 +401,7 @@ fn run() -> Result<bool> {
             cubevision::tools::eval(&args.video, &truth, &args.ffmpeg, load(&args.shared)?)
         }
         Some(Command::Check(args)) => {
+            point_at_runtime(args.shared.device);
             let models = cubevision::check::models(&models_dir(&args.shared.models)?, args.shared.device, args.seconds)?;
             if args.with_camera {
                 cubevision::check::camera(
@@ -389,7 +413,11 @@ fn run() -> Result<bool> {
             }
             Ok(true)
         }
-        None => live(&LiveArgs { width: 1280, height: 720, fps: 30, ..LiveArgs::default() }),
+        None => {
+            leave_own_console();
+            app::run(Start { models: models_dir(&cli.models)?, first: None, snapshot: Snapshot::new(cli.screenshot, cli.after) })?;
+            Ok(true)
+        }
     }
 }
 

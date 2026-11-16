@@ -4,6 +4,7 @@ use cube_core::Cube;
 use cube_decode::orientation::{OrientationTrack, Quat, decode_track, orientation_at, quat_conj, quat_mul, quat_of, rotation_of};
 use cube_decode::pipeline::VisionResult;
 use cube_decode::present::leading_rotation;
+use cube_decode::reconstruct::{Phase, Reconstruction};
 
 /// Time shown before the first turn and after the last, ms
 const MARGIN: f64 = 600.0;
@@ -179,4 +180,58 @@ impl Playback {
         }
         if from < due { Change::Play(from..due) } else { Change::Nothing }
     }
+}
+
+/// A stage of the solve (the cross, a pair, the last layer's two steps) on the video's clock
+#[derive(Clone, Debug, PartialEq)]
+pub struct Stage {
+    pub phase: Phase,
+    /// ms of the video it runs between
+    pub from: f64,
+    pub to: f64,
+    pub moves: u32,
+}
+
+impl Stage {
+    /// Its name as cubers write it
+    pub fn name(&self) -> &'static str {
+        match self.phase {
+            Phase::Cross => "Cross",
+            Phase::F2l1 => "Pair 1",
+            Phase::F2l2 => "Pair 2",
+            Phase::F2l3 => "Pair 3",
+            Phase::F2l4 => "Pair 4",
+            Phase::Oll => "OLL",
+            Phase::Pll => "PLL",
+        }
+    }
+}
+
+/// The stages of a solve, one after the other from its first turn
+pub fn stages(solve: &Reconstruction) -> Vec<Stage> {
+    let mut from = solve.start;
+    solve
+        .splits
+        .iter()
+        .map(|split| {
+            let stage = Stage { phase: split.phase, from, to: solve.start + split.end, moves: split.moves };
+            from = stage.to;
+            stage
+        })
+        .collect()
+}
+
+/// A solve as text, to paste elsewhere: its scramble, then each stage's moves with its name and time
+pub fn written(scramble: &str, solve: &Reconstruction) -> String {
+    let mut out = format!("Scramble: {}\n\n", scramble.trim());
+    for (split, stage) in solve.splits.iter().zip(stages(solve)) {
+        out.push_str(&format!("{} // {} ({:.2} s)\n", split.alg.trim(), stage.name(), split.duration / 1000.0));
+    }
+    out.push_str(&format!(
+        "\n{} moves in {:.2} s, {:.2} turns a second (read by cubevision)\n",
+        solve.moves,
+        solve.time / 1000.0,
+        solve.tps
+    ));
+    out
 }

@@ -231,3 +231,45 @@ fn a_session_never_writes_over_another() {
     assert_eq!(&bytes[..2], &[0xFF, 0xD8]);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_cube_that_keeps_fitting_badly_is_lost() {
+    use cubevision::live::{Agreement, LOST_AFTER};
+    let mut agreement = Agreement::default();
+    assert_eq!((agreement.level(), agreement.lost(100.0)), (None, false));
+    // Read well, then a few bad frames (a hand across): not lost
+    for i in 0..30 {
+        agreement.update(Some(0.9), i as f64 / 30.0);
+    }
+    agreement.update(Some(0.2), 1.0);
+    agreement.update(None, 1.1);
+    assert!(!agreement.lost(1.1 + LOST_AFTER + 1.0), "one bad frame");
+    // Badly for long: lost, once it has lasted
+    let mut t = 2.0;
+    while agreement.level().unwrap() >= cubevision::live::LOST_BELOW {
+        agreement.update(Some(0.3), t);
+        t += 1.0 / 30.0;
+    }
+    assert!(!agreement.lost(t));
+    assert!(agreement.lost(t + LOST_AFTER));
+    // Read well again: followed again
+    for _ in 0..60 {
+        agreement.update(Some(0.95), t);
+    }
+    assert!(!agreement.lost(t + 10.0));
+    agreement.update(Some(0.1), t);
+    agreement.reset();
+    assert_eq!(agreement.level(), None);
+}
+
+#[test]
+fn the_last_move_written_is_taken_back() {
+    use cube_decode::state::{apply_move, solved_state};
+    use cubevision::live::take_back;
+    let start = solved_state();
+    assert_eq!(take_back(&start, &[]), None);
+    let (kept, state) = take_back(&start, &[3, 0, 7]).unwrap();
+    assert_eq!(kept, [3, 0]);
+    assert_eq!(state, apply_move(&apply_move(&start, 3), 0));
+    assert_eq!(take_back(&start, &[5]).unwrap(), (vec![], start));
+}
