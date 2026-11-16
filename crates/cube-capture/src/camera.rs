@@ -1,6 +1,7 @@
 //! The camera, in a thread of its own that keeps its latest frame only.
 //!
-//! Windows: Media Foundation through nokhwa, in MJPEG. Linux: ffmpeg reading the V4L2 device. Other systems:
+//! Windows: Media Foundation through nokhwa, in the camera's format closest to the one asked (MJPEG when it
+//! has it). Linux: ffmpeg reading the V4L2 device. Other systems:
 //! not built yet.
 
 use std::process::Child;
@@ -40,6 +41,29 @@ pub struct CameraFormat {
     pub pixels: String,
 }
 
+/// One way a camera can deliver its frames
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Mode {
+    width: u32,
+    height: u32,
+    fps: u32,
+    /// The encoding, by preference: 0 is the one that keeps its rate best at this size (MJPEG)
+    encoding: u8,
+}
+
+/// The mode closest to the one asked, among those the camera has: one that keeps at least half the rate asked,
+/// then the closest size, then the preferred encoding, then the closest rate. A camera without MJPEG, or
+/// without the exact size asked, still opens.
+#[cfg(any(windows, test))]
+fn choose(modes: &[Mode], request: &CameraRequest) -> Option<usize> {
+    let key = |m: &Mode| {
+        let (dx, dy) = (i64::from(m.width) - i64::from(request.width), i64::from(m.height) - i64::from(request.height));
+        (m.fps * 2 < request.fps, dx * dx + dy * dy, m.encoding, m.fps.abs_diff(request.fps))
+    };
+    (0..modes.len()).min_by_key(|&i| key(&modes[i]))
+}
+
 /// How long a camera may take to open and give its first frame
 const OPENING: Duration = Duration::from_secs(15);
 
@@ -49,6 +73,11 @@ pub struct Camera {
     stop: Arc<AtomicBool>,
     /// The program that reads the camera, where one does (ffmpeg on Linux): ended with the camera
     child: Option<Arc<Mutex<Child>>>,
+}
+
+/// The cameras of this PC: their index and name (Linux: the /dev/video devices)
+pub fn cameras() -> Vec<(u32, String)> {
+    platform::cameras()
 }
 
 impl Camera {
@@ -130,14 +159,54 @@ mod platform {
     use std::sync::mpsc::RecvTimeoutError;
 
     use nokhwa::pixel_format::RgbFormat;
-    use nokhwa::utils::{CameraFormat as Format, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType, Resolution};
+    use nokhwa::utils::{CameraFormat as Format, CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType};
 
     use super::*;
+
+    /// The encodings read, by preference (see ``Mode``); None: one nokhwa cannot turn into colours
+    fn encoding(format: FrameFormat) -> Option<u8> {
+        match format {
+            FrameFormat::MJPEG => Some(0),
+            FrameFormat::NV12 => Some(1),
+            FrameFormat::YUYV => Some(2),
+            FrameFormat::RAWBGR | FrameFormat::RAWRGB => Some(3),
+            _ => None,
+        }
+    }
 
     /// The format the camera runs: nokhwa 0.10.11 on Media Foundation reads its frame rate's denominator (30/1
     /// gives 1), so the rate comes from the format it was asked to set
     fn rate(reported: Format, set: Option<Format>) -> u32 {
         set.map_or(reported.frame_rate(), |set| set.frame_rate())
+    }
+
+    /// The cameras of this PC: their index and name
+    pub fn cameras() -> Vec<(u32, String)> {
+        let found = nokhwa::query(nokhwa::utils::ApiBackend::MediaFoundation).unwrap_or_default();
+        found.iter().filter_map(|c| Some((c.index().as_index().ok()?, c.human_name()))).collect()
+    }
+
+    /// One camera opened and streaming in the mode closest to the one asked, and that mode when it was set.
+    /// Opened in whatever format comes first, then set: asking nokhwa for the closest MJPEG fails on a camera
+    /// without MJPEG, or without the exact size asked.
+    fn open(index: u32, width: u32, height: u32, fps: u32) -> std::result::Result<(nokhwa::Camera, Option<Format>), String> {
+        let any = RequestedFormat::new::<RgbFormat>(RequestedFormatType::None);
+        let mut camera = nokhwa::Camera::new(CameraIndex::Index(index), any)
+            .map_err(|e| format!("camera {index} could not be opened, is it plugged in and free? {e}"))?;
+        let formats: Vec<Format> =
+            camera.compatible_camera_formats().unwrap_or_default().into_iter().filter(|f| encoding(f.format()).is_some()).collect();
+        let modes: Vec<Mode> = formats
+            .iter()
+            .map(|f| Mode { width: f.width(), height: f.height(), fps: f.frame_rate(), encoding: encoding(f.format()).unwrap_or(u8::MAX) })
+            .collect();
+        let request = CameraRequest { index, width, height, fps };
+        // A format the camera refuses after all: it keeps the one it opened with
+        let set = choose(&modes, &request).map(|i| formats[i]).filter(|&format| {
+            let exact = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(format));
+            camera.set_camera_requset(exact).is_ok()
+        });
+        camera.open_stream().map_err(|e| format!("camera {index} could not start, is another app using it? {e}"))?;
+        Ok((camera, set))
     }
 
     pub fn start(
@@ -149,20 +218,19 @@ mod platform {
         let (index, width, height, fps) = (request.index, request.width, request.height, request.fps);
         // Not joined: a camera that stops delivering blocks in frame() and must not hang the program
         std::thread::spawn(move || {
-            let wanted = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(Format::new(
-                Resolution::new(width, height),
-                FrameFormat::MJPEG,
-                fps,
-            )));
-            let camera = nokhwa::Camera::new(CameraIndex::Index(index), wanted)
-                .map_err(|e| format!("camera {index} could not be opened: {e}"))
-                .and_then(|mut camera| {
-                    camera.open_stream().map_err(|e| format!("camera {index} could not start, is another app using it? {e}"))?;
-                    Ok(camera)
-                });
+            // The camera asked for, else the first other one that opens: on many laptops camera 0 is the
+            // infrared one, which has no colour format
+            let camera = open(index, width, height, fps).or_else(|first| {
+                let others = cameras().into_iter().map(|(i, _)| i).filter(|&i| i != index);
+                others.into_iter().find_map(|i| open(i, width, height, fps).ok()).ok_or_else(|| {
+                    let names: Vec<String> = cameras().into_iter().map(|(i, name)| format!("{i}: {name}")).collect();
+                    let list =
+                        if names.is_empty() { "no camera found".to_string() } else { format!("cameras found: {}", names.join(", ")) };
+                    format!("{first} ({list})")
+                })
+            });
             let mut camera = match camera {
-                Ok(mut camera) => {
-                    let set = camera.compatible_camera_formats().ok().and_then(|formats| wanted.fulfill(&formats));
+                Ok((camera, set)) => {
                     let format = camera.camera_format();
                     let _ = opened.send(Ok(CameraFormat {
                         name: camera.info().human_name(),
@@ -207,6 +275,8 @@ mod platform {
     mod tests {
         use super::*;
 
+        use nokhwa::utils::Resolution;
+
         #[test]
         fn the_frame_rate_is_the_one_set_not_its_denominator() {
             let size = Resolution::new(1280, 720);
@@ -224,6 +294,20 @@ mod platform {
     use std::process::{Command, Stdio};
 
     use super::*;
+
+    pub fn cameras() -> Vec<(u32, String)> {
+        let mut found: Vec<(u32, String)> = std::fs::read_dir("/dev")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                Some((name.strip_prefix("video")?.parse().ok()?, format!("/dev/{name}")))
+            })
+            .collect();
+        found.sort();
+        found
+    }
 
     /// What ffmpeg is asked: the V4L2 device in MJPEG at the size and rate wanted, its frames as raw RGBA of
     /// exactly that size (a device that gives another size is scaled to it)
@@ -393,6 +477,10 @@ mod platform {
 mod platform {
     use super::*;
 
+    pub fn cameras() -> Vec<(u32, String)> {
+        Vec::new()
+    }
+
     pub fn start(
         request: &CameraRequest,
         _latest: Latest<Image>,
@@ -405,6 +493,39 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const fn mode(width: u32, height: u32, fps: u32, encoding: u8) -> Mode {
+        Mode { width, height, fps, encoding }
+    }
+
+    #[test]
+    fn a_camera_without_mjpeg_still_gives_a_mode() {
+        let modes = [mode(640, 480, 30, 2), mode(1280, 720, 30, 1)];
+        assert_eq!(choose(&modes, &CameraRequest::default()), Some(1));
+    }
+
+    #[test]
+    fn a_camera_without_the_size_asked_gives_its_closest() {
+        let modes = [mode(640, 480, 30, 0), mode(1920, 1080, 30, 0), mode(960, 540, 30, 0)];
+        assert_eq!(choose(&modes, &CameraRequest::default()), Some(2));
+    }
+
+    #[test]
+    fn mjpeg_is_preferred_at_the_same_size() {
+        let modes = [mode(1280, 720, 30, 2), mode(1280, 720, 30, 0), mode(1280, 720, 60, 0)];
+        assert_eq!(choose(&modes, &CameraRequest::default()), Some(1));
+    }
+
+    #[test]
+    fn a_mode_far_too_slow_gives_way_to_a_smaller_one() {
+        let modes = [mode(1280, 720, 10, 2), mode(640, 480, 30, 2)];
+        assert_eq!(choose(&modes, &CameraRequest::default()), Some(1));
+    }
+
+    #[test]
+    fn no_mode_no_choice() {
+        assert_eq!(choose(&[], &CameraRequest::default()), None);
+    }
 
     #[test]
     fn rgb_becomes_opaque_rgba() {

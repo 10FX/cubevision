@@ -5,7 +5,7 @@ pub mod camera;
 pub mod latest;
 pub mod video;
 
-pub use camera::{Camera, CameraFormat, CameraRequest};
+pub use camera::{Camera, CameraFormat, CameraRequest, cameras};
 pub use latest::Latest;
 pub use video::{VideoInfo, VideoOptions, VideoReader};
 
