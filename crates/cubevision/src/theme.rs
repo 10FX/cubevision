@@ -266,10 +266,14 @@ pub fn foot(ctx: &egui::Context, facts: &[String]) {
 /// What went wrong, in the middle of the screen, and what the user can do
 pub fn failure(ui: &mut Ui, headline: &str, error: &str) {
     ui.add_space(24.0);
-    ui.vertical_centered(|ui| {
-        ui.set_max_width(640.0);
-        banner(ui, ERROR, headline, |ui| {
-            ui.add(egui::Label::new(RichText::new(error).color(TEXT)).wrap());
+    let width = ui.available_width().min(640.0);
+    ui.horizontal(|ui| {
+        ui.add_space((ui.available_width() - width) / 2.0);
+        ui.vertical(|ui| {
+            ui.set_width(width);
+            banner(ui, ERROR, headline, |ui| {
+                ui.add(egui::Label::new(RichText::new(error).color(TEXT)).wrap());
+            });
         });
     });
 }

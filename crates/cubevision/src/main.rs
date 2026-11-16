@@ -32,6 +32,14 @@ struct Cli {
     screenshot: Option<PathBuf>,
     #[arg(long, default_value_t = 4.0, hide = true)]
     after: f64,
+    /// Opens the window on this video being read, with --try-scramble (to check that screen unattended)
+    #[arg(long, value_name = "VIDEO", hide = true, requires = "try_scramble")]
+    try_video: Option<PathBuf>,
+    #[arg(long, value_name = "SCRAMBLE", hide = true)]
+    try_scramble: Option<String>,
+    /// With --try-video: the screenshot is of the reading, not of the replay
+    #[arg(long, hide = true)]
+    try_reading: bool,
 }
 
 #[derive(Subcommand)]
@@ -313,6 +321,7 @@ fn video(args: &VideoArgs) -> Result<bool> {
             models: models_dir(&args.shared.models)?,
             first: Some(First::Replay(Box::new(shown))),
             snapshot: Snapshot::default(),
+            screen: Snapshot::default(),
         })?;
     }
     Ok(solved)
@@ -333,7 +342,7 @@ fn live(args: &LiveArgs) -> Result<bool> {
         start: args.from.clone(),
         snapshot: Snapshot::new(args.shared.screenshot.clone(), args.shared.after),
     };
-    app::run(Start { models, first: Some(First::Live(options)), snapshot: Snapshot::default() })?;
+    app::run(Start { models, first: Some(First::Live(options)), snapshot: Snapshot::default(), screen: Snapshot::default() })?;
     Ok(true)
 }
 
@@ -358,7 +367,7 @@ fn label(args: &LabelArgs) -> Result<bool> {
         auto: args.auto,
         snapshot: Snapshot::new(live.shared.screenshot.clone(), live.shared.after),
     };
-    app::run(Start { models, first: Some(First::Label(options)), snapshot: Snapshot::default() })?;
+    app::run(Start { models, first: Some(First::Label(options)), snapshot: Snapshot::default(), screen: Snapshot::default() })?;
     Ok(true)
 }
 
@@ -415,7 +424,15 @@ fn run() -> Result<bool> {
         }
         None => {
             leave_own_console();
-            app::run(Start { models: models_dir(&cli.models)?, first: None, snapshot: Snapshot::new(cli.screenshot, cli.after) })?;
+            let snapshot = Snapshot::new(cli.screenshot, cli.after);
+            let first = cli.try_video.zip(cli.try_scramble).map(|(video, scramble)| {
+                point_at_runtime(None);
+                First::Read(Request::new(video, scramble), None)
+            });
+            // The first screen's picture, or the reading's; the replay's own otherwise
+            let (shell, screen) =
+                if first.is_none() || cli.try_reading { (snapshot, Snapshot::default()) } else { (Snapshot::default(), snapshot) };
+            app::run(Start { models: models_dir(&cli.models)?, first, snapshot: shell, screen })?;
             Ok(true)
         }
     }

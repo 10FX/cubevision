@@ -29,14 +29,17 @@ pub enum First {
     Live(LiveOptions),
     Label(LabelOptions),
     Replay(Box<Shown>),
+    /// A video read in the window, then its replay
+    Read(Request, Option<Device>),
 }
 
 pub struct Start {
     /// The models' folder
     pub models: PathBuf,
     pub first: Option<First>,
-    /// Of the first screen itself
+    /// Of the window whatever it shows, and of the screen a video read ends on
     pub snapshot: Snapshot,
+    pub screen: Snapshot,
 }
 
 /// Something run aside, and what it gave
@@ -332,7 +335,13 @@ impl Home {
                 self.problem = None;
                 self.settings.folder = video.parent().map(Path::to_path_buf);
                 self.save();
-                next = Some(Box::new(ReadingScreen::new(Request::new(video, scramble), self.models.clone(), self.engine.device(), ctx)));
+                next = Some(Box::new(ReadingScreen::new(
+                    Request::new(video, scramble),
+                    self.models.clone(),
+                    self.engine.device(),
+                    Snapshot::default(),
+                    ctx,
+                )));
             }
         });
 
@@ -514,10 +523,12 @@ struct ReadingScreen {
     failed: Option<(String, String)>,
     replay: Option<ReplayScreen>,
     started: Option<f64>,
+    /// Of the replay, or of this screen when told to be taken before the replay comes
+    snapshot: Snapshot,
 }
 
 impl ReadingScreen {
-    fn new(request: Request, models: PathBuf, device: Option<Device>, ctx: &egui::Context) -> Self {
+    fn new(request: Request, models: PathBuf, device: Option<Device>, snapshot: Snapshot, ctx: &egui::Context) -> Self {
         let request = Arc::new(request);
         let progress = Arc::new(Mutex::new(Progress::Loading));
         let cancel = Arc::new(AtomicBool::new(false));
@@ -533,7 +544,7 @@ impl ReadingScreen {
             })
         };
         let title = request.video.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        ReadingScreen { title, request, progress, cancel, job, failed: None, replay: None, started: None }
+        ReadingScreen { title, request, progress, cancel, job, failed: None, replay: None, started: None, snapshot }
     }
 }
 
@@ -565,7 +576,7 @@ impl Screen for ReadingScreen {
                 ));
             }
             Some(Ok(Some(solve))) => {
-                let replay = self.replay.insert(ReplayScreen::new(shown(&self.request, solve, Snapshot::default()), ctx));
+                let replay = self.replay.insert(ReplayScreen::new(shown(&self.request, solve, std::mem::take(&mut self.snapshot)), ctx));
                 return replay.show(ctx);
             }
             Some(Ok(None)) => return Next::Home,
@@ -651,11 +662,9 @@ impl eframe::App for Shell {
                     self.home.back();
                 }
             }
-            None => {
-                self.snapshot.tick(ctx);
-                self.screen = self.home.show(ctx);
-            }
+            None => self.screen = self.home.show(ctx),
         }
+        self.snapshot.tick(ctx);
     }
 
     fn on_exit(&mut self) {
@@ -677,6 +686,9 @@ pub fn run(start: Start) -> Result<()> {
             None => None,
             Some(First::Live(options)) => Some(Box::new(LiveScreen::new(options, ctx))),
             Some(First::Replay(shown)) => Some(Box::new(ReplayScreen::new(*shown, ctx))),
+            Some(First::Read(request, device)) => {
+                Some(Box::new(ReadingScreen::new(request, home.models.clone(), device, start.screen.clone(), ctx)))
+            }
             Some(First::Label(options)) => match label_window::screen(options, ctx) {
                 Ok(screen) => Some(Box::new(screen)),
                 Err(e) => {

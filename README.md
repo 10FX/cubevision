@@ -8,15 +8,15 @@ rewritten in Rust so that it runs faster on a PC, with the GPU you have (NVIDIA,
 CPU alone. It is a technical showcase: clone it, build it, and see what it does and how. For everyday
 use (timer, reconstructions, community), use ChronoCube.
 
-> **Status: early, and it runs.** The two modes exist: `cubevision live` writes the moves you make in
-> front of the camera on a 3D cube, and `cubevision video` finds the moves of a filmed solve and plays
-> them back. Underneath, five crates rewrite ChronoCube's vision in Rust and are checked against it.
-> Still to come: a larger reader for the PC; the [roadmap](#roadmap) says what comes in which order.
+> **Status: early, and it runs.** One window holds the three modes: live writes the moves you make in
+> front of the camera on a 3D cube, video finds the moves of a filmed solve and plays them back, label
+> makes labelled images of a real cube. Underneath, five crates rewrite ChronoCube's vision in Rust and
+> are checked against it. The [roadmap](#roadmap) says what comes in which order.
 >
 > **Try it on Windows in two minutes:** download `cubevision-windows-x64.zip` from the
 > [latest release](https://github.com/10FX/cubevision/releases/latest), unzip it and double-click
-> `live.bat`. Hold a solved cube in front of the camera, white on top, green facing it, and turn it.
-> Nothing to install; no image is saved.
+> `cubevision.exe`. Choose Live, hold a solved cube in front of the camera, white on top, green facing
+> it, and turn it. Nothing to install for the camera modes; the live mode saves no image.
 
 ## Contents
 
@@ -139,10 +139,28 @@ back to the CPU.
 
 ## Running it
 
-On Windows the release's zip holds everything: `live.bat` (the models on any GPU with DirectML),
-`live-openvino.bat` (an Intel GPU with OpenVINO), `live-cpu.bat`, a `README.txt`, and `test.bat`, which
-tries every engine and the camera and writes what each gives, or its error, to `results.txt`
-(`cubevision check --device … [--with-camera]` from the sources).
+On Windows the release's zip holds everything. `cubevision.exe` opens the window on its first screen:
+
+- **Live**, **Video** and **Label** start from there. A video is dropped on the window or chosen, its
+  scramble typed in.
+- The camera and where the models run are chosen in two lists and remembered (`settings.json` in
+  `%APPDATA%\cubevision`). The zip carries one ONNX Runtime per engine (DirectML for any graphics card,
+  OpenVINO for Intel graphics and processors); the program takes the one the engine needs, and starts
+  itself again when the engine is changed after a mode has run. On a first start, Intel graphics get
+  OpenVINO and the others DirectML.
+- What a mode lacks is said on that screen with the way to get it: ffmpeg for the video mode (a button
+  installs it with winget), the models when the folder is empty (a button downloads them).
+
+The same modes are commands (`cubevision live`, `video`, `label`), which need no script either. The zip
+also holds a `README.txt` and `test.bat`, which tries every engine and the camera and writes what each
+gives, or its error, to `results.txt` (`cubevision check --device … [--with-camera]` from the sources).
+
+The window is set in [Rubik](https://fonts.google.com/specimen/Rubik) and uses the cube's own colours:
+a mode each (green, blue, orange), and each move as a chip marked with the colour of the face it turns.
+In the video mode the solve is a bar of its stages with a mark at each turn; a stage or a move clicked
+goes to its time, and the solve is copied as text. In the live mode the last move written can be taken
+back, the camera's mirror turned off, and a warning tells when what is read stops fitting the cube on
+screen.
 
 From the sources, with Rust 1.92 or later and an ONNX Runtime library (the
 [prototype's requirements](#requirements) install one):
@@ -466,7 +484,7 @@ crates/cube-decode/       from readings to moves (see the table below)
 crates/cube-infer/        the two models, the hardware, the cube's box and crops
 crates/cube-capture/      frames from a video file or a camera
 crates/cube-view/         the cube drawn in 3D and played move by move, for an egui window
-crates/cubevision/        the program: live mode, video mode, their windows
+crates/cubevision/        the program: its window (first screen, live, video, label) and its commands
 training/                 how the models are made: Blender renders, training, export (Python)
 .github/workflows/        CI: the tests on Linux and Windows, format, lint; the training tests
 docs/superpowers/specs/   the design (in French): modes, architecture, models, tests
@@ -504,7 +522,7 @@ All seven exist.
 ### Labelling real images
 
 The released readers are trained on rendered images only, and real footage is where they read worst. `cubevision
-label` (`label.bat` in the zip) makes labelled images of a real cube without reading it: from a solved cube, the
+label` (Label on the window's first screen) makes labelled images of a real cube without reading it: from a solved cube, the
 program asks for one move at a time, the user makes it and presses Space, so the cube's state is known at every
 frame.
 
@@ -539,6 +557,7 @@ known, and telling it from these records is the next step.
 
 ## Licence
 
-Apache-2.0 for the code and the models. See [LICENSE](LICENSE). The Windows zip also carries ONNX
-Runtime (MIT), DirectML and the Visual C++ runtime from Microsoft, under their own terms (its
-`licenses` folder).
+Apache-2.0 for the code and the models. See [LICENSE](LICENSE). The window's typeface, Rubik, is under
+the SIL Open Font License ([`OFL.txt`](crates/cubevision/assets/fonts/OFL.txt)). The Windows zip also
+carries ONNX Runtime (MIT), DirectML and the Visual C++ runtime from Microsoft, under their own terms
+(its `licenses` folder).
